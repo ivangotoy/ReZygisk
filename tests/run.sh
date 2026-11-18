@@ -513,12 +513,20 @@ c_test remote_csoloader short_phdr_read "remote_csoloader: program headers cut b
 c_test remote_csoloader reserve_mmap_errno "remote_csoloader: a remote mmap reserve returning -errno stops the load"
 c_test remote_csoloader segment_mmap_errno "remote_csoloader: a remote segment mmap returning -errno stops the load"
 
-# hook.c builds against the test-only tests/c/include/jni.h
-c_build hook "$R/tests/c/hook_test.c" -I"$R/loader/src/injector" -I"$R/loader/src/external/csoloader/include" -I"$R/loader/src/external/plti/src"
-c_test hook remove_failed_modules "loader: modules that fail to load are removed from zygiskd by their current index"
-c_test hook jni_table_full "loader: a JNI method beyond the 32-entry hook table is reported as not hooked"
-c_test hook register_table_race "loader: plt hook registration cannot overflow its table between check and lock"
-c_test hook exclude_table_race "loader: plt hook exclusion cannot overflow its table between check and lock"
+# hook.c builds against the test-only tests/c/include/jni.h and the
+# headers of the csoloader and plti submodules
+if [ -f "$R/loader/src/external/csoloader/include/csoloader.h" ] && [ -f "$R/loader/src/external/plti/src/plti.h" ]; then
+  c_build hook "$R/tests/c/hook_test.c" -I"$R/loader/src/injector" -I"$R/loader/src/external/csoloader/include" -I"$R/loader/src/external/plti/src"
+  c_test hook remove_failed_modules "loader: modules that fail to load are removed from zygiskd by their current index"
+  c_test hook jni_table_full "loader: a JNI method beyond the 32-entry hook table is reported as not hooked"
+  c_test hook register_table_race "loader: plt hook registration cannot overflow its table between check and lock"
+  c_test hook exclude_table_race "loader: plt hook exclusion cannot overflow its table between check and lock"
+else
+  skip "loader: modules that fail to load are removed from zygiskd by their current index" "submodules not checked out (git submodule update --init)"
+  skip "loader: a JNI method beyond the 32-entry hook table is reported as not hooked" "submodules not checked out (git submodule update --init)"
+  skip "loader: plt hook registration cannot overflow its table between check and lock" "submodules not checked out (git submodule update --init)"
+  skip "loader: plt hook exclusion cannot overflow its table between check and lock" "submodules not checked out (git submodule update --init)"
+fi
 
 c_build loader_daemon "$R/tests/c/loader_daemon_test.c" "$R/loader/src/common/socket_utils.c"
 c_test loader_daemon get_info_daemon_down "loader rezygiskd_get_info: daemon down leaves an empty, freeable info"
