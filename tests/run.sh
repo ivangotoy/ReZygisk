@@ -426,6 +426,9 @@ c_test zygiskd_rootimpl apatch_version "zygiskd APatch: version parsed from apd 
 c_test zygiskd_rootimpl apatch_empty_output "zygiskd APatch: empty apd -V output is abnormal"
 c_test zygiskd_rootimpl magisk_requester "zygiskd Magisk: manager package from the requester string"
 c_test zygiskd_rootimpl magisk_short_output "zygiskd Magisk: output without value= keeps the default manager"
+c_test zygiskd_rootimpl magisk_sql_plain "zygiskd Magisk: denylist query for a plain process name"
+c_test zygiskd_rootimpl magisk_sql_quotes "zygiskd Magisk: quotes in the process name stay inside the SQL literal"
+c_test zygiskd_rootimpl magisk_sql_max_quotes "zygiskd Magisk: longest all-quote process name gives a complete query"
 
 c_build monitor "$R/tests/c/monitor_test.c"
 c_test monitor state_json_stop_reason "monitor: state.json with a stop reason is valid JSON"

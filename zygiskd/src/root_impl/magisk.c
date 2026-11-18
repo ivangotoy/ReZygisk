@@ -71,10 +71,19 @@ bool magisk_uid_granted_root(uid_t uid) {
 }
 
 bool magisk_uid_should_umount(const char *const process) {
-  /* INFO: PROCESS_NAME_MAX_LEN already has a +1 for NULL */
-  char sqlite_cmd[59 + PROCESS_NAME_MAX_LEN];
+  /* INFO: The process name goes into an SQL string literal, so every ' is doubled.
+             PROCESS_NAME_MAX_LEN already has a +1 for NULL. */
+  char escaped[2 * (PROCESS_NAME_MAX_LEN)];
+  size_t escaped_len = 0;
+  for (size_t i = 0; process[i] != '\0' && escaped_len + 2 < sizeof(escaped); i++) {
+    if (process[i] == '\'') escaped[escaped_len++] = '\'';
+    escaped[escaped_len++] = process[i];
+  }
+  escaped[escaped_len] = '\0';
+
+  char sqlite_cmd[59 + 2 * (PROCESS_NAME_MAX_LEN)];
   /* INFO: Find if process string starts with any data in "process" column */
-  snprintf(sqlite_cmd, sizeof(sqlite_cmd), "SELECT 1 FROM denylist WHERE \"%s\" LIKE process || '%%' LIMIT 1", process);
+  snprintf(sqlite_cmd, sizeof(sqlite_cmd), "SELECT 1 FROM denylist WHERE '%s' LIKE process || '%%' LIMIT 1", escaped);
 
   const char *const argv[] = { "magisk", "--sqlite", sqlite_cmd, NULL };
 

@@ -26,9 +26,11 @@ static const char *out_text = "";
 static const char *out_after = "";
 static size_t out_after_at = 0;
 static char last_pkg[256];
+static char last_sql[2048];
 
 bool t_exec(char *restrict buf, size_t len, const char *restrict file, const char *const argv[]) {
-  (void)file; (void)argv;
+  (void)file;
+  if (argv[1] && strcmp(argv[1], "--sqlite") == 0) snprintf(last_sql, sizeof(last_sql), "%s", argv[2]);
 
   memset(buf, 0, len);
   snprintf(buf, len, "%s", out_text);
@@ -65,6 +67,18 @@ static int magisk_manager_pkg(const char *text, const char *after, size_t after_
   return 1;
 }
 
+static int magisk_denylist_sql(const char *process, const char *want) {
+  out_text = ""; out_after = ""; out_after_at = 0;
+  last_sql[0] = '\0';
+
+  magisk_uid_should_umount(process);
+  if (strcmp(last_sql, want) == 0) return 0;
+
+  printf("sql:      %s\nexpected: %s\n", last_sql, want);
+
+  return 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -80,6 +94,19 @@ int main(int argc, char **argv) {
     return 1;
   }
   if (strcmp(argv[1], "magisk_requester") == 0) return magisk_manager_pkg("value=com.example.hidden", "", 0, "com.example.hidden");
+  if (strcmp(argv[1], "magisk_sql_plain") == 0)
+    return magisk_denylist_sql("com.example.app:remote", "SELECT 1 FROM denylist WHERE 'com.example.app:remote' LIKE process || '%' LIMIT 1");
+  if (strcmp(argv[1], "magisk_sql_quotes") == 0)
+    return magisk_denylist_sql("com.example:a\"b'c", "SELECT 1 FROM denylist WHERE 'com.example:a\"b''c' LIKE process || '%' LIMIT 1");
+  if (strcmp(argv[1], "magisk_sql_max_quotes") == 0) {
+    /* longest name zygiskd accepts (256 bytes), every byte a quote */
+    char name[257], lit[513], want[1024];
+    memset(name, '\'', 256); name[256] = '\0';
+    memset(lit, '\'', 512); lit[512] = '\0';
+    snprintf(want, sizeof(want), "SELECT 1 FROM denylist WHERE '%s' LIKE process || '%%' LIMIT 1", lit);
+
+    return magisk_denylist_sql(name, want);
+  }
   if (strcmp(argv[1], "magisk_short_output") == 0) return magisk_manager_pkg("abc", "com.example.stale", 6, "com.topjohnwu.magisk");
 
   return 2;
