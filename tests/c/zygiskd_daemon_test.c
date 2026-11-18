@@ -230,7 +230,8 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "survives_empty_client") == 0) return test_survives_empty_client();
   if (strcmp(argv[1], "accept_econnaborted") == 0) return accept_error(ECONNABORTED, true);
   if (strcmp(argv[1], "accept_eintr") == 0) return accept_error(EINTR, true);
-  if (strcmp(argv[1], "accept_emfile") == 0) return accept_error(EMFILE, true);
+  if (strcmp(argv[1], "accept_emfile_exits") == 0) return accept_error(EMFILE, false);
+  if (strcmp(argv[1], "accept_enfile_exits") == 0) return accept_error(ENFILE, false);
   if (strcmp(argv[1], "accept_einval_exits") == 0) return accept_error(EINVAL, false);
   if (strcmp(argv[1], "accept_econnaborted_log_fails") == 0) {
     break_stdout = true;

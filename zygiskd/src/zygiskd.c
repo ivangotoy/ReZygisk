@@ -375,9 +375,10 @@ void zygiskd_start(char *restrict argv[]) {
 
       LOGE("accept: %s", strerror(accept_errno));
 
-      /* INFO: Transient errors: the listening socket is still usable */
-      if (accept_errno == EINTR || accept_errno == ECONNABORTED || accept_errno == EAGAIN || accept_errno == EWOULDBLOCK ||
-          accept_errno == EMFILE || accept_errno == ENFILE) continue;
+      /* INFO: Transient errors: the listening socket is still usable. EMFILE and
+                 ENFILE are not retried: the pending connection stays queued and
+                 nothing closes a descriptor here, so a retry would spin. */
+      if (accept_errno == EINTR || accept_errno == ECONNABORTED || accept_errno == EAGAIN || accept_errno == EWOULDBLOCK) continue;
 
       break;
     }

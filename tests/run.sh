@@ -432,7 +432,8 @@ c_build zygiskd_daemon "$R/tests/c/zygiskd_daemon_test.c" "$R/zygiskd/src/utils.
 c_test zygiskd_daemon survives_empty_client "zygiskd: a client leaving without a request does not stop the daemon"
 c_test zygiskd_daemon accept_econnaborted "zygiskd: accept() ECONNABORTED does not stop the daemon"
 c_test zygiskd_daemon accept_eintr "zygiskd: accept() EINTR does not stop the daemon"
-c_test zygiskd_daemon accept_emfile "zygiskd: accept() EMFILE does not stop the daemon"
+c_test zygiskd_daemon accept_emfile_exits "zygiskd: accept() EMFILE still ends the daemon (no fd is freed while it retries)"
+c_test zygiskd_daemon accept_enfile_exits "zygiskd: accept() ENFILE still ends the daemon (no busy retry loop)"
 c_test zygiskd_daemon accept_einval_exits "zygiskd: other accept() errors still end the daemon"
 c_test zygiskd_daemon accept_econnaborted_log_fails "zygiskd: accept() errno is judged before logging can change it"
 
