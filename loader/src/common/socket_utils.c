@@ -1,13 +1,30 @@
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 
 #include "logging.h"
 
 #include "socket_utils.h"
+
+/* INFO: EAGAIN on a socket with a timeout set (SO_RCVTIMEO/SO_SNDTIMEO) is
+           that timeout expiring, not a reason to retry. Files, pipes and
+           sockets without a timeout keep retrying as before. */
+static bool timeout_expired(int fd, int option) {
+  int saved_errno = errno;
+
+  struct timeval tv = { 0 };
+  socklen_t len = sizeof(tv);
+  bool has_timeout = getsockopt(fd, SOL_SOCKET, option, &tv, &len) == 0 && (tv.tv_sec != 0 || tv.tv_usec != 0);
+
+  errno = saved_errno;
+
+  return has_timeout;
+}
 
 /* TODO: Perhaps merge the write and read functions?
            Their signature and a single function changes. */
@@ -16,6 +33,12 @@ ssize_t write_loop(int fd, const void *buf, size_t count) {
   while (written < count) {
     ssize_t ret = TEMP_FAILURE_RETRY(write(fd, (const char *)buf + written, count - written));
     if (ret == -1) {
+      if (errno == EAGAIN && timeout_expired(fd, SO_SNDTIMEO)) {
+        LOGE("write to fd %d timed out", fd);
+
+        return -1;
+      }
+
       if (errno == EAGAIN) {
         LOGW("Got EAGAIN while writing to fd %d, retrying...\n", fd);
 
@@ -45,6 +68,12 @@ ssize_t read_loop_offset(int fd, void *buf, size_t count, off_t offset) {
     if (offset == 0) ret = TEMP_FAILURE_RETRY(read(fd, (char *)buf + read_bytes, count - read_bytes));
     else ret = TEMP_FAILURE_RETRY(pread(fd, (char *)buf + read_bytes, count - read_bytes, offset + read_bytes));
     if (ret == -1) {
+      if (errno == EAGAIN && timeout_expired(fd, SO_RCVTIMEO)) {
+        LOGE("read from fd %d timed out", fd);
+
+        return -1;
+      }
+
       if (errno == EAGAIN) {
         LOGW("Got EAGAIN while reading from fd %d, retrying...\n", fd);
 

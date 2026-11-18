@@ -5,6 +5,7 @@
 
 #include <linux/un.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 
 #include "logging.h"
 #include "misc.h"
@@ -13,6 +14,25 @@
 #include "daemon.h"
 
 #define SOCKET_FILE_NAME LP_SELECT("cp32", "cp64") ".sock"
+
+/* INFO: How long one request may wait on ReZygiskd (connect, each read and
+           write) before it fails like a closed connection. */
+#ifndef ZYGISKD_PEER_TIMEOUT_MS
+  #define ZYGISKD_PEER_TIMEOUT_MS 10000
+#endif
+
+static void set_timeout(int fd, int timeout_ms) {
+  struct timeval tv = {
+    .tv_sec = timeout_ms / 1000,
+    .tv_usec = (timeout_ms % 1000) * 1000
+  };
+
+  /* INFO: Not fatal: without it the socket just blocks as before */
+  if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) == -1 ||
+      setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) == -1) {
+    PLOGE("set socket timeout");
+  }
+}
 
 static int rezygiskd_connect(uint8_t retry) {
   struct sockaddr_un addr = {
@@ -36,13 +56,19 @@ static int rezygiskd_connect(uint8_t retry) {
       return -1;
     }
 
+    /* INFO: Before connect(): it waits too while ReZygiskd's backlog is full */
+    set_timeout(fd, ZYGISKD_PEER_TIMEOUT_MS);
+
     int ret = connect(fd, (struct sockaddr *)&addr, sizeof(addr));
     if (ret == -1) {
+      int connect_errno = errno;
+
       PLOGE("connect (retry: %d)", retry);
 
       close(fd);
 
-      if (retry == 1) return -1;
+      /* INFO: Timed out (EAGAIN): ReZygiskd is there but stuck, retries would only add up */
+      if (retry == 1 || connect_errno == EAGAIN) return -1;
 
       sleep(1);
 
@@ -289,8 +315,12 @@ int rezygiskd_connect_companion(size_t index) {
   uint8_t res = 0;
   safe_read(read_uint8_t(fd, &res), "companion socket result", return -1);
 
-  if (res == 1) return fd;
-  else {
+  /* INFO: The module keeps this connection: no timeout on it */
+  if (res == 1) {
+    set_timeout(fd, 0);
+
+    return fd;
+  } else {
     close(fd);
 
     return -1;

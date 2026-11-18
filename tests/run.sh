@@ -529,6 +529,15 @@ else
   skip "loader: plt hook exclusion cannot overflow its table between check and lock" "submodules not checked out (git submodule update --init)"
 fi
 
+# loader requests with a 200 ms ZYGISKD_PEER_TIMEOUT_MS
+c_build loader_timeout "$R/tests/c/loader_timeout_test.c" "$R/loader/src/common/socket_utils.c" -DZYGISKD_PEER_TIMEOUT_MS=200
+c_test loader_timeout silent_peer "loader: a silent zygiskd fails the request like a closed one, after one timeout"
+c_test loader_timeout first_field_then_silent "loader: a zygiskd going silent mid-answer fails the request after one timeout"
+c_test loader_timeout backlog_full "loader: connect() to a zygiskd that never accepts gives up after one timeout"
+c_test loader_timeout companion_fd_untimed "loader: the companion fd handed to a module carries no timeout"
+c_test loader_timeout nonblocking_pipe_retries "loader: read_loop still retries EAGAIN on a non-blocking pipe"
+c_test loader_timeout untimed_socket_waits "loader: read_loop still waits on a socket without a timeout"
+
 c_build loader_daemon "$R/tests/c/loader_daemon_test.c" "$R/loader/src/common/socket_utils.c"
 c_test loader_daemon get_info_daemon_down "loader rezygiskd_get_info: daemon down leaves an empty, freeable info"
 
