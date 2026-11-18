@@ -158,7 +158,7 @@ void companion_entry(int fd) {
       free(args);
       close(client_fd);
 
-      break;
+      continue;
     }
 
     pthread_t thread;
