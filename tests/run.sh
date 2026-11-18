@@ -448,6 +448,12 @@ c_test zygiskd_daemon accept_enfile_exits "zygiskd: accept() ENFILE still ends t
 c_test zygiskd_daemon accept_einval_exits "zygiskd: other accept() errors still end the daemon"
 c_test zygiskd_daemon accept_econnaborted_log_fails "zygiskd: accept() errno is judged before logging can change it"
 
+# same daemon with a 300 ms peer timeout (ZYGISKD_PEER_TIMEOUT_MS)
+c_build zygiskd_daemon_timeout "$R/tests/c/zygiskd_daemon_test.c" "$R/zygiskd/src/utils.c" -DZYGISKD_PEER_TIMEOUT_MS=300
+c_test zygiskd_daemon_timeout stalled_client_before_request "zygiskd: a client stuck before its request is dropped after the timeout"
+c_test zygiskd_daemon_timeout stalled_client_mid_request "zygiskd: a client stuck in the middle of a request is dropped after the timeout"
+c_test zygiskd_daemon_timeout companion_channel_untimed "zygiskd: the client fd handed to a companion carries no timeout"
+
 c_build zygiskd_companion "$R/tests/c/zygiskd_companion_test.c" "$R/zygiskd/src/utils.c"
 c_test zygiskd_companion survives_gone_client "zygiskd companion: a client gone before its ack does not end the companion"
 

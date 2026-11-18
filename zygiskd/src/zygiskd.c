@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 
 #include <linux/limits.h>
@@ -44,6 +45,26 @@ struct rzd_info_payload {
 #define PATH_CP_NAME TMP_PATH "/" LP_SELECT("cp32.sock", "cp64.sock")
 #define ZYGISKD_FILE PATH_MODULES_DIR "/rezygisk/bin/zygiskd" LP_SELECT("32", "64")
 #define ZYGISKD_PATH "/data/adb/modules/rezygisk/bin/zygiskd" LP_SELECT("32", "64")
+
+/* INFO: How long a peer may stall in the middle of a request (client
+           request bytes and replies, companion handshake) before it is
+           dropped. Never applied to idle waits. */
+#ifndef ZYGISKD_PEER_TIMEOUT_MS
+  #define ZYGISKD_PEER_TIMEOUT_MS 10000
+#endif
+
+static void set_peer_timeout(int fd, int timeout_ms) {
+  struct timeval tv = {
+    .tv_sec = timeout_ms / 1000,
+    .tv_usec = (timeout_ms % 1000) * 1000
+  };
+
+  /* INFO: Not fatal: without it the socket just blocks as before */
+  if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) == -1 ||
+      setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) == -1) {
+    LOGW("Failed to set socket timeout: %s", strerror(errno));
+  }
+}
 
 #ifdef __aarch64__
   #define ARCH_STR "arm64-v8a"
@@ -185,6 +206,9 @@ static int spawn_companion(char *restrict argv[], char *restrict name, int lib_f
 
   if (pid > 0) {
     close(companion_fd);
+
+    /* INFO: Only the daemon's end: the companion idles on its own end */
+    set_peer_timeout(daemon_fd, ZYGISKD_PEER_TIMEOUT_MS);
 
     int status = 0;
     waitpid(pid, &status, 0);
@@ -382,6 +406,8 @@ void zygiskd_start(char *restrict argv[]) {
 
       break;
     }
+
+    set_peer_timeout(client_fd, ZYGISKD_PEER_TIMEOUT_MS);
 
     uint8_t action8 = 0;
     ssize_t len = read_uint8_t(client_fd, &action8);
@@ -586,6 +612,9 @@ void zygiskd_start(char *restrict argv[]) {
         */
         if (module->companion >= 0) {
           LOGI(" - Sending companion fd socket of module \"%s\"", module->name);
+
+          /* INFO: Timeouts travel with the fd: the module's channel has none */
+          set_peer_timeout(client_fd, 0);
 
           if (write_fd(module->companion, client_fd) == -1) {
             LOGE(" - Failed to send companion fd socket of module \"%s\"", module->name);

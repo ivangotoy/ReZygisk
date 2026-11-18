@@ -19,6 +19,17 @@
 #define unix_listener_from_path t_listener
 #define unix_datagram_sendto t_sendto
 #define set_socket_create_context t_set_context
+#define non_blocking_execv t_execv
+
+/* module dir: /data/adb/modules is mapped to $TEST_DIR/modules */
+#include <dirent.h>
+static const char *t_map(const char *path, char *buf, size_t size);
+static DIR *t_opendir(const char *path);
+static int t_access(const char *path, int mode);
+static int t_open(const char *path, int flags, ...);
+#define opendir(p) t_opendir(p)
+#define access(p, m) t_access(p, m)
+#define open(p, ...) t_open(p, __VA_ARGS__)
 
 /* accept(): the first call can be made to fail with a chosen errno */
 static int inject_accept_errno = 0;
@@ -29,6 +40,67 @@ static int t_accept(int fd, struct sockaddr *addr, socklen_t *len);
 #include "../../zygiskd/src/zygiskd.c"
 
 #undef accept
+#undef opendir
+#undef access
+#undef open
+
+static const char *t_map(const char *path, char *buf, size_t size) {
+  const char *prefix = "/data/adb/modules";
+  if (strncmp(path, prefix, strlen(prefix)) != 0) return path;
+
+  snprintf(buf, size, "%s/modules%s", getenv("TEST_DIR"), path + strlen(prefix));
+
+  return buf;
+}
+
+static DIR *t_opendir(const char *path) { char b[PATH_MAX]; return opendir(t_map(path, b, sizeof(b))); }
+static int t_access(const char *path, int mode) { char b[PATH_MAX]; return access(t_map(path, b, sizeof(b)), mode); }
+static int t_open(const char *path, int flags, ...) { char b[PATH_MAX]; return open(t_map(path, b, sizeof(b)), flags); }
+
+/* Stand-in for the companion process: handshake like companion_entry(),
+   then for each client fd report through it whether that fd blocks
+   without a timeout (ack 1) or not (ack 2 or 3). */
+static void fake_companion(int fd) {
+  char name[257];
+  if (read_string(fd, name, sizeof(name)) == -1) _exit(1);
+  int lib = read_fd(fd);
+  if (lib == -1) _exit(1);
+  close(lib);
+  if (write_uint8_t(fd, 1) != 1) _exit(1);
+
+  while (1) {
+    int client = read_fd(fd);
+    if (client == -1) _exit(0);
+
+    struct timeval rcv = { 0 }, snd = { 0 };
+    socklen_t len = sizeof(rcv);
+    getsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &rcv, &len);
+    len = sizeof(snd);
+    getsockopt(client, SOL_SOCKET, SO_SNDTIMEO, &snd, &len);
+
+    /* the module keeps the channel: a byte sent later than any timeout must still arrive */
+    char c = 0;
+    uint8_t ack = 1;
+    if (rcv.tv_sec || rcv.tv_usec || snd.tv_sec || snd.tv_usec) ack = 2;
+    else if (read(client, &c, 1) != 1 || c != 'x') ack = 3;
+    write(client, &ack, 1);
+    close(client);
+  }
+}
+
+int t_execv(const char *file, char *const argv[]) {
+  (void)file;
+
+  pid_t pid = fork();
+  if (pid == -1) return -1;
+  if (pid == 0) {
+    fake_companion(atoi(argv[2]));
+
+    _exit(0);
+  }
+
+  return 0;
+}
 
 static int t_accept(int fd, struct sockaddr *addr, socklen_t *len) {
   if (inject_accept_errno != 0) {
@@ -222,6 +294,77 @@ static int accept_error(int err, bool should_survive) {
   return result;
 }
 
+#ifndef ZYGISKD_PEER_TIMEOUT_MS
+#define ZYGISKD_PEER_TIMEOUT_MS 10000
+#endif
+
+/* a client stuck before (or in the middle of) its request is dropped
+   after the timeout, and the next client is served */
+static int stalled_client(bool mid_request) {
+  pid_t daemon = start_daemon();
+  if (daemon == -1) return 2;
+
+  int result = 1;
+  int stuck = connect_daemon();
+  if (stuck == -1) goto out;
+  if (mid_request) {
+    uint8_t action = GetProcessFlags;
+    if (write(stuck, &action, 1) != 1) goto out;
+  }
+
+  if (get_info_ok(daemon)) result = 0;
+  else printf("daemon did not serve the next client while one was stuck\n");
+
+  close(stuck);
+
+  out:
+    kill(daemon, SIGKILL);
+    waitpid(daemon, NULL, 0);
+
+    return result;
+}
+
+/* the client fd handed to a module companion carries no timeout */
+static int companion_channel_untimed(void) {
+  const char *dir = getenv("TEST_DIR");
+  if (dir == NULL) return 2;
+  char path[PATH_MAX];
+  snprintf(path, sizeof(path), "%s/modules", dir); mkdir(dir, 0700); mkdir(path, 0700);
+  snprintf(path, sizeof(path), "%s/modules/example", dir); mkdir(path, 0700);
+  snprintf(path, sizeof(path), "%s/modules/example/zygisk", dir); mkdir(path, 0700);
+  snprintf(path, sizeof(path), "%s/modules/example/zygisk/" ARCH_STR ".so", dir);
+  FILE *f = fopen(path, "w");
+  if (f == NULL) return 2;
+  fclose(f);
+
+  pid_t daemon = start_daemon();
+  if (daemon == -1) return 2;
+
+  int result = 1;
+  int fd = connect_daemon();
+  if (fd == -1) goto out;
+
+  uint8_t action = RequestCompanionSocket;
+  size_t index = 0;
+  if (write(fd, &action, 1) != 1 || write(fd, &index, sizeof(index)) != (ssize_t)sizeof(index)) goto out;
+
+  /* longer than the timeout of this build */
+  usleep((ZYGISKD_PEER_TIMEOUT_MS * 2 + 100) * 1000);
+  if (write(fd, "x", 1) != 1) goto out;
+
+  uint8_t ack = 0;
+  if (read(fd, &ack, 1) == 1 && ack == 1) result = 0;
+  else printf("companion ack %u (2: fd carries a timeout, 3: channel closed by a timeout)\n", ack);
+
+  close(fd);
+
+  out:
+    kill(daemon, SIGKILL);
+    waitpid(daemon, NULL, 0);
+
+    return result;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -233,6 +376,9 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "accept_emfile_exits") == 0) return accept_error(EMFILE, false);
   if (strcmp(argv[1], "accept_enfile_exits") == 0) return accept_error(ENFILE, false);
   if (strcmp(argv[1], "accept_einval_exits") == 0) return accept_error(EINVAL, false);
+  if (strcmp(argv[1], "stalled_client_before_request") == 0) return stalled_client(false);
+  if (strcmp(argv[1], "stalled_client_mid_request") == 0) return stalled_client(true);
+  if (strcmp(argv[1], "companion_channel_untimed") == 0) return companion_channel_untimed();
   if (strcmp(argv[1], "accept_econnaborted_log_fails") == 0) {
     break_stdout = true;
 
