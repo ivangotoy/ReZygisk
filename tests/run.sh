@@ -423,6 +423,9 @@ c_test zygiskd_rootimpl apatch_empty_output "zygiskd APatch: empty apd -V output
 c_test zygiskd_rootimpl magisk_requester "zygiskd Magisk: manager package from the requester string"
 c_test zygiskd_rootimpl magisk_short_output "zygiskd Magisk: output without value= keeps the default manager"
 
+c_build monitor "$R/tests/c/monitor_test.c"
+c_test monitor state_json_stop_reason "monitor: state.json with a stop reason is valid JSON"
+
 echo "passed $PASSED failed $FAILED skipped $SKIPPED"
 if [ "$FAILED" -ne 0 ]; then exit 1; fi
 if [ "${REZYGISK_REQUIRE_CC:-}" = 1 ] && [ "$CC_SKIPPED" -ne 0 ]; then
