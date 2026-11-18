@@ -24,6 +24,16 @@ static int open_files = 0;
 
 static FILE *t_fopen(const char *path, const char *mode) {
   if (strcmp(path, "/proc/self/attr/current") == 0) path = attr_current_path;
+  /* sockcreate: the thread-self file is missing, the per-tid one rejects writes */
+  if (strcmp(path, "/proc/thread-self/attr/sockcreate") == 0) {
+    errno = ENOENT;
+
+    return NULL;
+  }
+  if (strncmp(path, "/proc/self/task/", strlen("/proc/self/task/")) == 0) {
+    path = attr_current_path;
+    mode = "r";
+  }
 
   FILE *f = (fopen)(path, mode);
   if (f) open_files++;
@@ -118,6 +128,20 @@ static int test_current_attr_bounds(void) {
   return strlen(s.buf) == sizeof(s.buf) - 1 ? 0 : 1;
 }
 
+/* set_socket_create_context() must close the tid file when the write fails */
+static int test_sockcreate_no_leak(void) {
+  if (write_fixture("sockcreate", 'x', 1, attr_current_path) == -1) return 2;
+
+  set_socket_create_context("u:r:zygote:s0");
+  if (open_files != 0) {
+    printf("%d FILE(s) left open\n", open_files);
+
+    return 1;
+  }
+
+  return 0;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -126,6 +150,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "read_string_empty") == 0) return test_read_string_empty();
   if (strcmp(argv[1], "read_string_value") == 0) return test_read_string_value();
   if (strcmp(argv[1], "current_attr_bounds") == 0) return test_current_attr_bounds();
+  if (strcmp(argv[1], "sockcreate_no_leak") == 0) return test_sockcreate_no_leak();
 
   return 2;
 }

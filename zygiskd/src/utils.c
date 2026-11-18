@@ -87,6 +87,8 @@ void set_socket_create_context(const char *restrict context) {
     if (fwrite(context, 1, strlen(context), sockcreate) != strlen(context)) {
       LOGE("Failed to write to tid sockcreate with %d: %s", errno, strerror(errno));
 
+      fclose(sockcreate);
+
       return;
     }
 
