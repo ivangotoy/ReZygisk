@@ -468,6 +468,10 @@ c_test ptracer_main trace_zero_pid "zygisk-ptrace trace: pid 0 rejected"
 c_test ptracer_main trace_negative_pid "zygisk-ptrace trace: negative pid rejected"
 c_test ptracer_main ctl_without_command "zygisk-ptrace ctl: missing command prints usage and exits 1"
 
+c_build ptracer_utils "$R/tests/c/ptracer_utils_test.c"
+c_test ptracer_utils fork_ok "zygisk-ptrace fork_dont_care: grandchild gets 0, caller a pid"
+c_test ptracer_utils second_fork_fails "zygisk-ptrace fork_dont_care: failed second fork returns -1 to the caller only"
+
 c_build loader_daemon "$R/tests/c/loader_daemon_test.c" "$R/loader/src/common/socket_utils.c"
 c_test loader_daemon get_info_daemon_down "loader rezygiskd_get_info: daemon down leaves an empty, freeable info"
 

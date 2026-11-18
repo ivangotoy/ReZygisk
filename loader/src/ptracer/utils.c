@@ -326,11 +326,16 @@ int fork_dont_care() {
   if (pid < 0) PLOGE("fork 1");
   else if (pid == 0) {
     pid = fork();
-    if (pid < 0) PLOGE("fork 2");
+    if (pid < 0) {
+      PLOGE("fork 2");
+
+      /* INFO: Never return to the caller from the intermediate child */
+      _exit(1);
+    }
     else if (pid > 0) exit(0);
   } else {
     int status;
-    waitpid(pid, &status, __WALL);
+    if (waitpid(pid, &status, __WALL) == -1 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) return -1;
   }
 
   return pid;
