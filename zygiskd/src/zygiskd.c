@@ -372,6 +372,10 @@ void zygiskd_start(char *restrict argv[]) {
     if (client_fd == -1) {
       LOGE("accept: %s", strerror(errno));
 
+      /* INFO: Transient errors: the listening socket is still usable */
+      if (errno == EINTR || errno == ECONNABORTED || errno == EAGAIN || errno == EWOULDBLOCK ||
+          errno == EMFILE || errno == ENFILE) continue;
+
       break;
     }
 

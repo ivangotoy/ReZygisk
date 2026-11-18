@@ -417,6 +417,10 @@ c_test zygiskd_common uid_from_pkg_missing "zygiskd uid_from_pkg: missing packag
 
 c_build zygiskd_daemon "$R/tests/c/zygiskd_daemon_test.c" "$R/zygiskd/src/utils.c"
 c_test zygiskd_daemon survives_empty_client "zygiskd: a client leaving without a request does not stop the daemon"
+c_test zygiskd_daemon accept_econnaborted "zygiskd: accept() ECONNABORTED does not stop the daemon"
+c_test zygiskd_daemon accept_eintr "zygiskd: accept() EINTR does not stop the daemon"
+c_test zygiskd_daemon accept_emfile "zygiskd: accept() EMFILE does not stop the daemon"
+c_test zygiskd_daemon accept_einval_exits "zygiskd: other accept() errors still end the daemon"
 
 c_build zygiskd_companion "$R/tests/c/zygiskd_companion_test.c" "$R/zygiskd/src/utils.c"
 c_test zygiskd_companion survives_gone_client "zygiskd companion: a client gone before its ack does not end the companion"

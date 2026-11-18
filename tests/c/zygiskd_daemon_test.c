@@ -19,7 +19,25 @@
 #define unix_datagram_sendto t_sendto
 #define set_socket_create_context t_set_context
 
+/* accept(): the first call can be made to fail with a chosen errno */
+static int inject_accept_errno = 0;
+static int t_accept(int fd, struct sockaddr *addr, socklen_t *len);
+#define accept(fd, a, l) t_accept(fd, a, l)
+
 #include "../../zygiskd/src/zygiskd.c"
+
+#undef accept
+
+static int t_accept(int fd, struct sockaddr *addr, socklen_t *len) {
+  if (inject_accept_errno != 0) {
+    errno = inject_accept_errno;
+    inject_accept_errno = 0;
+
+    return -1;
+  }
+
+  return accept(fd, addr, len);
+}
 
 static char sock_path[PATH_MAX];
 
@@ -98,7 +116,9 @@ static int test_survives_empty_client(void) {
   const char *dir = getenv("TEST_DIR");
   if (dir == NULL) return 2;
   mkdir(dir, 0700);
-  snprintf(sock_path, sizeof(sock_path), "%s/cp.sock", dir);
+  /* relative path: $TEST_DIR can exceed sun_path */
+  if (chdir(dir) == -1) return -1;
+  snprintf(sock_path, sizeof(sock_path), "cp.sock");
   unlink(sock_path);
 
   pid_t daemon = fork();
@@ -142,12 +162,68 @@ static int test_survives_empty_client(void) {
     return result;
 }
 
+static pid_t start_daemon(void) {
+  const char *dir = getenv("TEST_DIR");
+  if (dir == NULL) return -1;
+  mkdir(dir, 0700);
+  /* relative path: $TEST_DIR can exceed sun_path */
+  if (chdir(dir) == -1) return -1;
+  snprintf(sock_path, sizeof(sock_path), "cp.sock");
+  unlink(sock_path);
+
+  pid_t daemon = fork();
+  if (daemon == 0) {
+    alarm(20);
+
+    char *argv[] = { "zygiskd", NULL };
+    zygiskd_start(argv);
+
+    _exit(0);
+  }
+
+  for (int i = 0; i < 100 && access(sock_path, F_OK) != 0; i++) usleep(50000);
+
+  return daemon;
+}
+
+/* accept() failing with <err> first: transient errors keep the daemon
+   serving, others still end it */
+static int accept_error(int err, bool should_survive) {
+  inject_accept_errno = err;
+
+  pid_t daemon = start_daemon();
+  if (daemon == -1) return 2;
+
+  int result = 1;
+  if (should_survive) {
+    /* the injected failure happens on the first accept, before this request */
+    if (get_info_ok(daemon)) result = 0;
+    else printf("daemon stopped after accept() failed with %s\n", strerror(err));
+  } else {
+    int status = 0;
+    pid_t done = 0;
+    for (int i = 0; i < 100 && (done = waitpid(daemon, &status, WNOHANG)) == 0; i++) usleep(50000);
+    if (done == daemon) return 0;
+
+    printf("daemon kept running after accept() failed with %s\n", strerror(err));
+  }
+
+  kill(daemon, SIGKILL);
+  waitpid(daemon, NULL, 0);
+
+  return result;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
   setvbuf(stdout, NULL, _IONBF, 0);
 
   if (strcmp(argv[1], "survives_empty_client") == 0) return test_survives_empty_client();
+  if (strcmp(argv[1], "accept_econnaborted") == 0) return accept_error(ECONNABORTED, true);
+  if (strcmp(argv[1], "accept_eintr") == 0) return accept_error(EINTR, true);
+  if (strcmp(argv[1], "accept_emfile") == 0) return accept_error(EMFILE, true);
+  if (strcmp(argv[1], "accept_einval_exits") == 0) return accept_error(EINVAL, false);
 
   return 2;
 }
