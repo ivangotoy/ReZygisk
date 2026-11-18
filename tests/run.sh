@@ -476,6 +476,7 @@ c_test ptracer_main ctl_without_command "zygisk-ptrace ctl: missing command prin
 
 c_build ptracer_utils "$R/tests/c/ptracer_utils_test.c"
 c_test ptracer_utils fork_ok "zygisk-ptrace fork_dont_care: grandchild gets 0, caller a pid"
+c_test ptracer_utils fork_ok_sigchld_ignored "zygisk-ptrace fork_dont_care: SIGCHLD ignored still gives the caller a pid"
 c_test ptracer_utils second_fork_fails "zygisk-ptrace fork_dont_care: failed second fork returns -1 to the caller only"
 
 c_build loader_misc "$R/tests/c/loader_misc_test.c"

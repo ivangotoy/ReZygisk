@@ -335,7 +335,9 @@ int fork_dont_care() {
     else if (pid > 0) exit(0);
   } else {
     int status;
-    if (waitpid(pid, &status, __WALL) == -1 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) return -1;
+    /* INFO: Only a child that is known to have failed counts: with SIGCHLD
+               ignored, waitpid() fails with ECHILD after a good fork. */
+    if (waitpid(pid, &status, __WALL) == pid && WIFEXITED(status) && WEXITSTATUS(status) != 0) return -1;
   }
 
   return pid;

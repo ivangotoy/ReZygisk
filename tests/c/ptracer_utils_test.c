@@ -103,12 +103,22 @@ static int test_fork_ok(void) {
   return ret > 0 && c == 'g' ? 0 : 1;
 }
 
+/* SIGCHLD ignored (a disposition inherited across exec): the kernel reaps
+   the intermediate child itself and waitpid() fails with ECHILD after a
+   successful double fork; the caller must still get a pid, not -1 */
+static int test_fork_ok_sigchld_ignored(void) {
+  signal(SIGCHLD, SIG_IGN);
+
+  return test_fork_ok();
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
   setvbuf(stdout, NULL, _IONBF, 0);
 
   if (strcmp(argv[1], "fork_ok") == 0) return test_fork_ok();
+  if (strcmp(argv[1], "fork_ok_sigchld_ignored") == 0) return test_fork_ok_sigchld_ignored();
   if (strcmp(argv[1], "second_fork_fails") == 0) return test_second_fork_fails();
 
   return 2;
