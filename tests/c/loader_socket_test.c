@@ -59,6 +59,34 @@ static int test_read_string_value(void) {
   return ok ? 0 : 1;
 }
 
+/* a peer that closes after 2 of 4 bytes: the fixed-size read must fail
+   (daemon.c's safe_read only treats -1 as failure) */
+static int test_read_uint32_short(void) {
+  int sv[2];
+  if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1) return 2;
+
+  if (write(sv[0], "ab", 2) != 2) return 2;
+  close(sv[0]);
+
+  uint32_t v = 0;
+  ssize_t ret = read_uint32_t(sv[1], &v);
+  if (ret == -1) return 0;
+
+  printf("read_uint32_t returned %zd for a 2-byte answer\n", ret);
+
+  return 1;
+}
+
+static int test_read_uint32_full(void) {
+  int sv[2];
+  if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1) return 2;
+
+  uint32_t in = 0x12345678, out = 0;
+  if (write(sv[0], &in, sizeof(in)) != (ssize_t)sizeof(in)) return 2;
+
+  return read_uint32_t(sv[1], &out) == (ssize_t)sizeof(out) && out == in ? 0 : 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -66,6 +94,8 @@ int main(int argc, char **argv) {
 
   if (strcmp(argv[1], "read_string_value") == 0) return test_read_string_value();
   if (strcmp(argv[1], "read_string_huge_length") == 0) return test_read_string_huge_length();
+  if (strcmp(argv[1], "read_uint32_full") == 0) return test_read_uint32_full();
+  if (strcmp(argv[1], "read_uint32_short") == 0) return test_read_uint32_short();
 
   return 2;
 }

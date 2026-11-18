@@ -449,6 +449,8 @@ c_test loader_daemon get_info_daemon_down "loader rezygiskd_get_info: daemon dow
 c_build loader_socket "$R/tests/c/loader_socket_test.c"
 c_test loader_socket read_string_value "loader read_string: reads a string"
 c_test loader_socket read_string_huge_length "loader read_string: SIZE_MAX length is refused before allocating"
+c_test loader_socket read_uint32_full "loader read_uint32_t: reads a full value"
+c_test loader_socket read_uint32_short "loader read_uint32_t: short answer is a read failure"
 
 echo "passed $PASSED failed $FAILED skipped $SKIPPED"
 if [ "$FAILED" -ne 0 ]; then exit 1; fi

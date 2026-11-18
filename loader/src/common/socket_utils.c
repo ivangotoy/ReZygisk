@@ -208,9 +208,13 @@ char *read_string(int fd) {
     return write_loop(fd, &val, sizeof(type)); \
   }
 
-#define read_func(type)                      \
-  ssize_t read_## type(int fd, type *val) {  \
-    return read_loop(fd, val, sizeof(type)); \
+/* INFO: A short read (peer closed early) is a failure like -1 */
+#define read_func(type)                                   \
+  ssize_t read_## type(int fd, type *val) {               \
+    ssize_t read_bytes = read_loop(fd, val, sizeof(type)); \
+    if (read_bytes != (ssize_t)sizeof(type)) return -1;   \
+                                                          \
+    return read_bytes;                                    \
   }
 
 write_func(uint8_t)
