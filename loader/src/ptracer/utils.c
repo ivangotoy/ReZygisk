@@ -202,6 +202,8 @@ void align_stack(struct user_regs_struct *regs, long preserve) {
   regs->REG_SP = (uintptr_t)((intptr_t)(regs->REG_SP - preserve) & ~0xf);
 }
 
+static void wait_for_trace_until(int pid, int *status, int flags, int64_t deadline_ms);
+
 uintptr_t remote_call(int pid, struct user_regs_struct *regs, uintptr_t func_addr, uintptr_t return_addr, long *args, size_t args_size) {
   align_stack(regs, 0);
 
@@ -295,7 +297,7 @@ uintptr_t remote_call(int pid, struct user_regs_struct *regs, uintptr_t func_add
   ptrace(PTRACE_CONT, pid, 0, 0);
 
   int status;
-  wait_for_trace(pid, &status, __WALL);
+  wait_for_trace_until(pid, &status, __WALL, trace_monotonic_ms() + REZYGISK_REMOTE_CALL_TIMEOUT_MS);
   if (!get_regs(pid, regs)) {
     LOGE("failed to get regs after call");
 
@@ -337,7 +339,7 @@ int fork_dont_care() {
     int status;
     /* INFO: Only a child that is known to have failed counts: with SIGCHLD
                ignored, waitpid() fails with ECHILD after a good fork. */
-    if (waitpid(pid, &status, __WALL) == pid && WIFEXITED(status) && WEXITSTATUS(status) != 0) return -1;
+    if (waitpid_until(pid, &status, __WALL, trace_monotonic_ms() + REZYGISK_TRACE_TIMEOUT_MS) == pid && WIFEXITED(status) && WEXITSTATUS(status) != 0) return -1;
   }
 
   return pid;
@@ -684,6 +686,8 @@ bool find_jump_slot_got_offset(const char *elf_path, const char *symbol, uintptr
   return found;
 }
 
+static bool wait_for_ptrace_syscall_stop_until(int pid, int *status, int64_t deadline_ms);
+
 bool wait_linker_ready(int pid, uintptr_t *out_libc_init_resolved, uintptr_t *out_libc_init_got_slot) {
   char pid_str[11];
   snprintf(pid_str, sizeof(pid_str), "%d", pid);
@@ -720,7 +724,9 @@ bool wait_linker_ready(int pid, uintptr_t *out_libc_init_resolved, uintptr_t *ou
     return false;
   }
 
-  /* INFO: Loop till linker changes the value (resolves the symbol) */
+  /* INFO: Loop till linker changes the value (resolves the symbol), within one
+             deadline for all the syscall stops it takes */
+  int64_t deadline = trace_monotonic_ms() + REZYGISK_TRACE_TIMEOUT_MS;
   while (1) {
     uintptr_t current_value = 0;
     if (read_proc(pid, *out_libc_init_got_slot, &current_value, sizeof(current_value)) != sizeof(current_value)) {
@@ -746,8 +752,14 @@ bool wait_linker_ready(int pid, uintptr_t *out_libc_init_resolved, uintptr_t *ou
     }
 
     int status = 0;
-    if (!wait_for_ptrace_syscall_stop(pid, &status)) {
+    if (!wait_for_ptrace_syscall_stop_until(pid, &status, deadline)) {
       LOGE("wait_for_ptrace_syscall_stop failed");
+
+      return false;
+    }
+
+    if (trace_monotonic_ms() >= deadline) {
+      LOGE("Linker did not resolve __libc_init in time");
 
       return false;
     }
@@ -796,10 +808,16 @@ bool ptrace_poke_uintptr(pid_t pid, uintptr_t addr, uintptr_t value) {
   #define AARCH64_PSTATE_BTYPE_MASK (3ull << 10)
 #endif
 
-bool wait_for_ptrace_syscall_stop(int pid, int *status) {
+/* INFO: One deadline covers the whole wait, including its retries */
+static bool wait_for_ptrace_syscall_stop_until(int pid, int *status, int64_t deadline_ms) {
   int step_retries = 0;
   while (1) {
-    pid_t waited = waitpid(pid, status, __WALL);
+    pid_t waited = waitpid_until(pid, status, __WALL, deadline_ms);
+    if (waited == 0) {
+      LOGE("Remote syscall stop did not come in time");
+
+      return false;
+    }
     if (waited == -1) {
       if (errno == EINTR) continue;
 
@@ -850,6 +868,10 @@ bool wait_for_ptrace_syscall_stop(int pid, int *status) {
 
     return false;
   }
+}
+
+bool wait_for_ptrace_syscall_stop(int pid, int *status) {
+  return wait_for_ptrace_syscall_stop_until(pid, status, trace_monotonic_ms() + REZYGISK_TRACE_TIMEOUT_MS);
 }
 
 long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_gadget, long sysnr, long *args, size_t args_size) {
@@ -1004,9 +1026,18 @@ void tracee_skip_syscall(int pid) {
   #endif
 }
 
-void wait_for_trace(int pid, int *status, int flags) {
+/* INFO: wait_for_trace() with a deadline for the whole wait, including the
+           stops it continues itself. Timing out reads like a failed wait. */
+static void wait_for_trace_until(int pid, int *status, int flags, int64_t deadline_ms) {
   while (1) {
-    pid_t result = waitpid(pid, status, flags);
+    pid_t result = waitpid_until(pid, status, flags, deadline_ms);
+    if (result == 0) {
+      LOGE("process %d did not stop in time", pid);
+      /* INFO: Allow the caller can detect the failure */
+      *status = 255 << 8; /* INFO: WIFEXITED, WEXITSTATUS=255 */
+
+      return;
+    }
     if (result == -1) {
       if (errno == EINTR) continue;
 
@@ -1043,6 +1074,10 @@ void wait_for_trace(int pid, int *status, int flags) {
 
     return;
   }
+}
+
+void wait_for_trace(int pid, int *status, int flags) {
+  wait_for_trace_until(pid, status, flags, trace_monotonic_ms() + REZYGISK_TRACE_TIMEOUT_MS);
 }
 
 void parse_status(int status, char *buf, size_t len) {

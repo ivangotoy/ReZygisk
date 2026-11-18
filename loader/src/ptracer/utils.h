@@ -5,6 +5,9 @@
 
 #include <unistd.h>
 #include <sys/ptrace.h>
+#include <stdint.h>
+#include <sys/wait.h>
+#include <time.h>
 
 #include "misc.h"
 
@@ -73,6 +76,30 @@ long remote_syscall(int pid, struct user_regs_struct *regs, uintptr_t syscall_ga
 void tracee_skip_syscall(int pid);
 
 void wait_for_trace(int pid, int *status, int flags);
+
+/* INFO: CLOCK_MONOTONIC in milliseconds */
+static inline int64_t trace_monotonic_ms(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+
+  return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+/* INFO: waitpid() until deadline_ms (trace_monotonic_ms() clock): the first
+           check does not sleep, then the interval grows from 50 us to 5 ms.
+           Returns what waitpid() returned, or 0 when the deadline passed
+           (nothing else is done: no signal is sent). */
+static inline pid_t waitpid_until(pid_t pid, int *status, int flags, int64_t deadline_ms) {
+  useconds_t interval = 50;
+  while (1) {
+    pid_t ret = waitpid(pid, status, flags | WNOHANG);
+    if (ret != 0) return ret;
+    if (trace_monotonic_ms() >= deadline_ms) return 0;
+
+    usleep(interval);
+    if (interval < 5000) interval *= 2;
+  }
+}
 
 void parse_status(int status, char *buf, size_t len);
 

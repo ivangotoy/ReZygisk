@@ -15,12 +15,9 @@
 
 #define SOCKET_FILE_NAME LP_SELECT("cp32", "cp64") ".sock"
 
-/* INFO: How long one request may wait on ReZygiskd (connect, each read and
-           write) before it fails like a closed connection. */
-#ifndef ZYGISKD_PEER_TIMEOUT_MS
-  #define ZYGISKD_PEER_TIMEOUT_MS 10000
-#endif
-
+/* INFO: ZYGISKD_PEER_TIMEOUT_MS (misc.h): how long one request may wait on
+           ReZygiskd (connect, each read and write) before it fails like a
+           closed connection. */
 static void set_timeout(int fd, int timeout_ms) {
   struct timeval tv = {
     .tv_sec = timeout_ms / 1000,

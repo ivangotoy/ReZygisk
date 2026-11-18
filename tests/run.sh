@@ -509,6 +509,14 @@ c_test ptracer_utils fork_ok "zygisk-ptrace fork_dont_care: grandchild gets 0, c
 c_test ptracer_utils fork_ok_sigchld_ignored "zygisk-ptrace fork_dont_care: SIGCHLD ignored still gives the caller a pid"
 c_test ptracer_utils second_fork_fails "zygisk-ptrace fork_dont_care: failed second fork returns -1 to the caller only"
 
+# tracer waits with short REZYGISK_TRACE_TIMEOUT_MS / REZYGISK_REMOTE_CALL_TIMEOUT_MS
+c_build ptracer_utils_timeout "$R/tests/c/ptracer_utils_test.c" -DREZYGISK_TRACE_TIMEOUT_MS=200 -DREZYGISK_REMOTE_CALL_TIMEOUT_MS=400
+c_test ptracer_utils_timeout trace_wait_times_out "zygisk-ptrace wait_for_trace: a tracee that never stops ends the wait like a failed wait"
+c_test ptracer_utils_timeout syscall_stop_times_out "zygisk-ptrace wait_for_ptrace_syscall_stop: a tracee that never stops fails the wait"
+c_test ptracer_utils_timeout remote_call_times_out "zygisk-ptrace remote_call: a remote function that never returns fails the call"
+c_test ptracer_utils_timeout linker_never_ready "zygisk-ptrace wait_linker_ready: a linker that never resolves gives up in time"
+c_test ptracer_utils_timeout fork_reap_times_out "zygisk-ptrace fork_dont_care: an intermediate child never reported still gives the caller a pid"
+
 c_build loader_misc "$R/tests/c/loader_misc_test.c"
 c_test loader_misc maps_parsed "loader parse_maps: entries parsed and freed"
 c_test loader_misc empty_maps_no_leak "loader parse_maps: no mapping found leaves nothing allocated"

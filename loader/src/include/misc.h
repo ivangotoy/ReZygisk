@@ -10,6 +10,21 @@
   #define LP_SELECT(lp32, lp64) lp32
 #endif
 
+/* INFO: Time limits (milliseconds; a build may override them with -D) */
+/* INFO: One request of the loader to ReZygiskd */
+#ifndef ZYGISKD_PEER_TIMEOUT_MS
+  #define ZYGISKD_PEER_TIMEOUT_MS 10000
+#endif
+/* INFO: One wait of the tracer or the monitor for a traced process to stop */
+#ifndef REZYGISK_TRACE_TIMEOUT_MS
+  #define REZYGISK_TRACE_TIMEOUT_MS 10000
+#endif
+/* INFO: A remote call runs code in zygote, which itself may wait on ReZygiskd
+           (connect retries and one request) */
+#ifndef REZYGISK_REMOTE_CALL_TIMEOUT_MS
+  #define REZYGISK_REMOTE_CALL_TIMEOUT_MS (REZYGISK_TRACE_TIMEOUT_MS + ZYGISKD_PEER_TIMEOUT_MS + 5000)
+#endif
+
 #define APP_ID(uid) uid % 100000
 
 #define IS_ISOLATED_SERVICE(uid)      \
