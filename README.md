@@ -23,6 +23,9 @@ The Zygisk Next developers are famous and trusted in the Android community, howe
 | Tool            | Description                            |
 |-----------------|----------------------------------------|
 | `Android NDK`   | Native Development Kit for Android     |
+| `python3`       | Runs `scripts/sign.py` during the build |
+| `cryptography`  | Python package imported by `scripts/sign.py` |
+| `zip`           | Packs the module zip                   |
 
 ### C Dependencies
 

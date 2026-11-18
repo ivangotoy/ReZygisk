@@ -99,6 +99,19 @@ else
   skip "yaml workflows" "no python3"
 fi
 
+echo "== README dependencies"
+# The build tools the Makefile runs and the third-party modules sign.py
+# imports must be listed in README.md's Dependencies section.
+deps=$(sed -n '/^## Dependencies/,/^## Installation/p' "$R/README.md")
+for tool in python3 zip; do
+  grep -qE "(^|[[:space:]])$tool " "$R/Makefile" || { bad "Makefile still runs $tool"; continue; }
+  if printf '%s\n' "$deps" | grep -q "\`$tool\`"; then ok "README lists $tool (used by the Makefile)"; else bad "README lists $tool (used by the Makefile)"; fi
+done
+for mod in $(sed -n 's/^from \([A-Za-z0-9_]*\).*/\1/p; s/^import \([A-Za-z0-9_]*\).*/\1/p' "$R/scripts/sign.py" | sort -u); do
+  case "$mod" in sys|os|struct|hashlib|pathlib) continue ;; esac
+  if printf '%s\n' "$deps" | grep -q "\`$mod\`"; then ok "README lists $mod (imported by sign.py)"; else bad "README lists $mod (imported by sign.py)"; fi
+done
+
 echo "== post-fs-data.sh"
 # pfd_case <name>: module tree $C/modules/rezygisk with fake ptracer binaries
 pfd_case() {
