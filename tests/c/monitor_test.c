@@ -11,6 +11,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #define sigabbrev_np t_sigabbrev_np
@@ -171,6 +172,60 @@ static int test_listener_bind_fail_closes(void) {
   return 0;
 }
 
+static int write_prop(const char *content) {
+  const char *dir = getenv("TEST_DIR");
+  if (dir == NULL) return -1;
+  mkdir(dir, 0700);
+  snprintf(prop_path, sizeof(prop_path), "%s/module.prop", dir);
+  snprintf(state_path, sizeof(state_path), "%s/state.json", dir);
+
+  FILE *f = (fopen)(prop_path, "w");
+  if (f == NULL) return -1;
+  fputs(content, f);
+
+  return (fclose)(f) == 0 ? 0 : -1;
+}
+
+/* a module.prop larger than the section buffers must not overflow them;
+   runs in a child so a crash is a failure too */
+static int test_sections_bounded(void) {
+  char content[4096], desc[1501];
+  memset(desc, 'd', 1500); desc[1500] = '\0';
+  snprintf(content, sizeof(content), "id=rezygisk\nname=ReZygisk\ndescription=%s\nupdateJson=https://example.invalid/update.json\n", desc);
+  if (write_prop(content) == -1) return 2;
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    if (!prepare_environment()) _exit(3);
+
+    size_t pre = strlen(pre_section), post = strlen(post_section);
+    if (pre >= sizeof(pre_section) || post >= sizeof(post_section)) {
+      printf("pre_section %zu, post_section %zu bytes in %zu-byte buffers\n", pre, post, sizeof(post_section));
+
+      _exit(1);
+    }
+
+    /* the description is shortened, the line after it stays whole */
+    const char *tail = "\nupdateJson=https://example.invalid/update.json\n";
+    size_t tail_len = strlen(tail);
+    if (post < tail_len || strcmp(post_section + post - tail_len, tail) != 0 || post_section[0] != 'd') {
+      printf("post_section ends: %s\n", post > 80 ? post_section + post - 80 : post_section);
+
+      _exit(4);
+    }
+
+    _exit(0);
+  }
+
+  int status = 0;
+  waitpid(pid, &status, 0);
+  if (WIFEXITED(status) && WEXITSTATUS(status) == 0) return 0;
+
+  printf("child status 0x%x\n", status);
+
+  return 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -178,6 +233,7 @@ int main(int argc, char **argv) {
 
   if (strcmp(argv[1], "state_json_stop_reason") == 0) return test_state_json_stop_reason();
   if (strcmp(argv[1], "listener_stale_path") == 0) return test_listener_stale_path();
+  if (strcmp(argv[1], "sections_bounded") == 0) return test_sections_bounded();
   if (strcmp(argv[1], "listener_bind_fail_closes") == 0) return test_listener_bind_fail_closes();
 
   return 2;

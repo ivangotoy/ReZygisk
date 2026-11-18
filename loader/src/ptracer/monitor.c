@@ -974,6 +974,22 @@ static bool update_status(const char *message) {
   return true;
 }
 
+/* INFO: Appends whole lines only; a line that does not fit is dropped */
+static void append_section(char *section, size_t size, const char *text) {
+  if (strlen(section) + strlen(text) >= size) {
+    LOGW("module.prop too large, dropping: %.32s", text);
+
+    return;
+  }
+
+  strcat(section, text);
+}
+
+/* INFO: Appends as much of the text as fits */
+static void append_truncated(char *section, size_t size, const char *text) {
+  strncat(section, text, size - 1 - strlen(section));
+}
+
 static bool prepare_environment() {
   FILE *orig_prop = fopen("/data/adb/modules/rezygisk/module.prop", "r");
   if (orig_prop == NULL) {
@@ -982,23 +998,49 @@ static bool prepare_environment() {
     return false;
   }
 
+  bool found_description = false;
+  bool in_description = false;
   bool after_description = false;
+  bool description_newline = false;
+
+  /* INFO: The description text and the lines after it are collected apart, so
+             that a module.prop too large for post_section loses description
+             text, never a following line such as updateJson. */
+  char description[sizeof(post_section)] = { 0 };
+  char after[sizeof(post_section)] = { 0 };
 
   char line[1024];
   while (fgets(line, sizeof(line), orig_prop) != NULL) {
-    if (strncmp(line, "description=", strlen("description=")) == 0) {
-      strcat(pre_section, "description=");
-      strcat(post_section, line + strlen("description="));
-      after_description = true;
-
-      continue;
+    if (!found_description && strncmp(line, "description=", strlen("description=")) == 0) {
+      append_section(pre_section, sizeof(pre_section), "description=");
+      append_truncated(description, sizeof(description), line + strlen("description="));
+      found_description = true;
+      in_description = true;
+    } else if (in_description) {
+      append_truncated(description, sizeof(description), line);
+    } else if (after_description) {
+      append_section(after, sizeof(after), line);
+    } else {
+      append_section(pre_section, sizeof(pre_section), line);
     }
 
-    if (after_description) strcat(post_section, line);
-    else strcat(pre_section, line);
+    /* INFO: A description longer than line arrives in several reads */
+    if (in_description && line[strlen(line) - 1] == '\n') {
+      in_description = false;
+      after_description = true;
+      description_newline = true;
+    }
   }
 
   fclose(orig_prop);
+
+  if (found_description) {
+    size_t description_len = strcspn(description, "\n");
+    size_t room = sizeof(post_section) - 1 - strlen(after) - (description_newline ? 1 : 0);
+    if (description_len > room) description_len = room;
+
+    snprintf(post_section, sizeof(post_section), "%.*s%s%s", (int)description_len, description, description_newline ? "\n" : "", after);
+  }
 
   return true;
 }
