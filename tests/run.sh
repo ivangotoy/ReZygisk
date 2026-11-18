@@ -80,7 +80,7 @@ else
 fi
 
 if have python3; then
-  if out=$(PYTHONPYCACHEPREFIX="$W/pycache" python3 -I -m py_compile "$R/scripts/sign.py" 2>&1); then ok "py_compile scripts/sign.py"; else bad "py_compile scripts/sign.py" "$out"; fi
+  if out=$(python3 -I -c 'import py_compile,sys;py_compile.compile(sys.argv[1],cfile=sys.argv[2],doraise=True)' "$R/scripts/sign.py" "$W/sign.pyc" 2>&1); then ok "py_compile scripts/sign.py"; else bad "py_compile scripts/sign.py" "$out"; fi
   for f in "$R"/.forgejo/update.json "$R"/webroot/lang/*.json; do
     rel=${f#"$R"/}
     if out=$(python3 -I -m json.tool "$f" 2>&1 >/dev/null); then ok "json $rel"; else bad "json $rel" "$out"; fi
