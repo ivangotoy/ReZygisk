@@ -99,6 +99,17 @@ else
   skip "yaml workflows" "no python3"
 fi
 
+echo "== release workflow"
+# The build step runs upstream-merged build code: it gets no signing secrets.
+WF="$R/.forgejo/workflows/module-release.yml"
+S="SIGN""_"
+if grep -q "$S" "$WF"; then bad "workflow has no $S entries" "$(grep -n "$S" "$WF")"; else ok "workflow has no $S entries"; fi
+if (cd "$R" && find . \( -path ./.git -o -path ./tests \) -prune -o -type f -exec grep -l "$S" {} + | grep -v '^./.forgejo/module-ci.sh$' | grep -q .); then
+  bad "only module-ci.sh mentions $S outside tests/" "$(cd "$R" && find . \( -path ./.git -o -path ./tests \) -prune -o -type f -exec grep -l "$S" {} +)"
+else
+  ok "only module-ci.sh mentions $S outside tests/"
+fi
+
 echo "== README dependencies"
 # The build tools the Makefile runs and the third-party modules sign.py
 # imports must be listed in README.md's Dependencies section.
