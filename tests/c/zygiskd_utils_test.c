@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sched.h>
+#include <sys/mount.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -17,13 +19,21 @@ static int t_fclose(FILE *f);
 #define fopen(p, m) t_fopen(p, m)
 #define fclose(f) t_fclose(f)
 
+/* namespace calls: setns succeeds, unshare fails, umount2 is recorded */
+static int t_umount2(const char *target, int flags);
+#define setns(fd, type) ((void)(fd), (void)(type), 0)
+#define unshare(flags) ((void)(flags), errno = EPERM, -1)
+#define umount2(t, f) t_umount2(t, f)
+
 #include "../../zygiskd/src/utils.c"
 
 static char attr_current_path[PATH_MAX];
+static char mountinfo_path[PATH_MAX];
 static int open_files = 0;
 
 static FILE *t_fopen(const char *path, const char *mode) {
   if (strcmp(path, "/proc/self/attr/current") == 0) path = attr_current_path;
+  if (strcmp(path, "/proc/self/mountinfo") == 0) path = mountinfo_path;
   /* sockcreate: the thread-self file is missing, the per-tid one rejects writes */
   if (strcmp(path, "/proc/thread-self/attr/sockcreate") == 0) {
     errno = ENOENT;
@@ -142,6 +152,49 @@ static int test_sockcreate_no_leak(void) {
   return 0;
 }
 
+static int t_umount2(const char *target, int flags) {
+  (void)flags;
+
+  char log[PATH_MAX];
+  snprintf(log, sizeof(log), "%s/umounts", getenv("TEST_DIR"));
+
+  FILE *f = (fopen)(log, "a");
+  if (f) {
+    fprintf(f, "%s\n", target);
+    (fclose)(f);
+  }
+
+  return 0;
+}
+
+/* save_mns_fd(Clean) must not unmount anything when unshare() fails: the
+   child would still be in the target's mount namespace */
+static int test_clean_ns_unshare_fails(void) {
+  if (make_test_dir() == -1) return 2;
+
+  snprintf(mountinfo_path, sizeof(mountinfo_path), "%s/mountinfo", getenv("TEST_DIR"));
+  FILE *f = (fopen)(mountinfo_path, "w");
+  if (f == NULL) return 2;
+  fprintf(f, "20 1 0:18 / / rw,relatime shared:1 - ext4 /dev/root rw\n");
+  fprintf(f, "36 20 0:20 / /data/adb/modules rw,relatime shared:2 - tmpfs magisk rw\n");
+  (fclose)(f);
+
+  char log[PATH_MAX];
+  snprintf(log, sizeof(log), "%s/umounts", getenv("TEST_DIR"));
+  unlink(log);
+
+  struct root_impl impl = { .impl = Magisk, .variant = 0 };
+  int fd = save_mns_fd(getpid(), Clean, impl);
+
+  if (access(log, F_OK) == 0) {
+    printf("umount2 ran in the target namespace\n");
+
+    return 1;
+  }
+
+  return fd == -1 ? 0 : 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -151,6 +204,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "read_string_value") == 0) return test_read_string_value();
   if (strcmp(argv[1], "current_attr_bounds") == 0) return test_current_attr_bounds();
   if (strcmp(argv[1], "sockcreate_no_leak") == 0) return test_sockcreate_no_leak();
+  if (strcmp(argv[1], "clean_ns_unshare_fails") == 0) return test_clean_ns_unshare_fails();
 
   return 2;
 }

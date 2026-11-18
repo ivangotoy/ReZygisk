@@ -407,6 +407,7 @@ c_test zygiskd_utils read_string_value "zygiskd read_string: reads a string"
 c_test zygiskd_utils read_string_empty "zygiskd read_string: empty string is NUL-terminated"
 c_test zygiskd_utils current_attr_bounds "zygiskd get_current_attr: stays inside the buffer"
 c_test zygiskd_utils sockcreate_no_leak "zygiskd set_socket_create_context: failed write closes the file"
+c_test zygiskd_utils clean_ns_unshare_fails "zygiskd save_mns_fd: failed unshare unmounts nothing"
 
 echo "passed $PASSED failed $FAILED skipped $SKIPPED"
 if [ "$FAILED" -ne 0 ]; then exit 1; fi
