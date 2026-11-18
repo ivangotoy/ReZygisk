@@ -408,6 +408,7 @@ c_test zygiskd_utils read_string_empty "zygiskd read_string: empty string is NUL
 c_test zygiskd_utils current_attr_bounds "zygiskd get_current_attr: stays inside the buffer"
 c_test zygiskd_utils sockcreate_no_leak "zygiskd set_socket_create_context: failed write closes the file"
 c_test zygiskd_utils clean_ns_unshare_fails "zygiskd save_mns_fd: failed unshare unmounts nothing"
+c_test zygiskd_utils clean_ns_failure_reaps_child "zygiskd save_mns_fd: failure reaps the helper child"
 
 c_build zygiskd_common "$R/tests/c/zygiskd_common_test.c"
 c_test zygiskd_common uid_from_pkg_found "zygiskd uid_from_pkg: installed package gives its app id"

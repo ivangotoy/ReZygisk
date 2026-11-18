@@ -195,6 +195,19 @@ static int test_clean_ns_unshare_fails(void) {
   return fd == -1 ? 0 : 1;
 }
 
+/* a failed save_mns_fd() must reap its helper child (no zombie left) */
+static int test_clean_ns_failure_reaps_child(void) {
+  int ret = test_clean_ns_unshare_fails();
+  if (ret != 0) return ret;
+
+  pid_t left = waitpid(-1, NULL, 0);
+  if (left == -1 && errno == ECHILD) return 0;
+
+  printf("child %d was left for the caller to reap\n", (int)left);
+
+  return 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -205,6 +218,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "current_attr_bounds") == 0) return test_current_attr_bounds();
   if (strcmp(argv[1], "sockcreate_no_leak") == 0) return test_sockcreate_no_leak();
   if (strcmp(argv[1], "clean_ns_unshare_fails") == 0) return test_clean_ns_unshare_fails();
+  if (strcmp(argv[1], "clean_ns_failure_reaps_child") == 0) return test_clean_ns_failure_reaps_child();
 
   return 2;
 }

@@ -820,6 +820,7 @@ int save_mns_fd(int pid, enum MountNamespaceState mns_state, struct root_impl im
     LOGE("Failed to read from socket_parent: %s", strerror(errno));
 
     close(socket_parent);
+    waitpid(fork_pid, NULL, 0);
 
     return -1;
   }
@@ -828,6 +829,7 @@ int save_mns_fd(int pid, enum MountNamespaceState mns_state, struct root_impl im
     LOGE("Failed to umount root");
 
     close(socket_parent);
+    waitpid(fork_pid, NULL, 0);
 
     return -1;
   }
@@ -840,6 +842,7 @@ int save_mns_fd(int pid, enum MountNamespaceState mns_state, struct root_impl im
     LOGE("open: %s", strerror(errno));
 
     close(socket_parent);
+    waitpid(fork_pid, NULL, 0);
 
     return -1;
   }
@@ -850,6 +853,7 @@ int save_mns_fd(int pid, enum MountNamespaceState mns_state, struct root_impl im
 
     close(ns_fd);
     close(socket_parent);
+    waitpid(fork_pid, NULL, 0);
 
     return -1;
   }
@@ -858,12 +862,15 @@ int save_mns_fd(int pid, enum MountNamespaceState mns_state, struct root_impl im
     LOGE("Failed to close socket_parent: %s", strerror(errno));
 
     close(ns_fd);
+    waitpid(fork_pid, NULL, 0);
 
     return -1;
   }
 
   if (waitpid(fork_pid, NULL, 0) == -1) {
     LOGE("waitpid: %s", strerror(errno));
+
+    close(ns_fd);
 
     return -1;
   }
