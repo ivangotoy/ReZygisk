@@ -37,6 +37,8 @@ static int t_stat(const char *path, struct stat *st);
 #define unlink(p) t_unlink(p)
 #define rename(a, b) t_rename(a, b)
 #define stat(p, s) t_stat(p, s)
+static pid_t t_waitpid(pid_t pid, int *status, int options);
+#define waitpid(p, s, o) t_waitpid(p, s, o)
 
 #include "../../loader/src/ptracer/monitor.c"
 
@@ -44,6 +46,26 @@ static int t_stat(const char *path, struct stat *st);
 #undef unlink
 #undef rename
 #undef stat
+#undef waitpid
+
+/* waitpid(): reports ECHILD (no child left) when echild_mode is set,
+   and ends the process if it is called over and over */
+static bool echild_mode = false;
+static int waitpid_calls = 0;
+
+static pid_t t_waitpid(pid_t pid, int *status, int options) {
+  if (!echild_mode) return waitpid(pid, status, options);
+
+  if (++waitpid_calls > 1000) {
+    printf("waitpid called %d times without a child: busy loop\n", waitpid_calls);
+
+    _exit(1);
+  }
+
+  errno = ECHILD;
+
+  return -1;
+}
 
 /* /data/adb/modules/rezygisk/<f> is mapped to $TEST_DIR/<f> */
 static const char *t_map(const char *path, char *buf, size_t size) {
@@ -198,6 +220,14 @@ static int test_listener_bind_fail_closes(void) {
 
     return 1;
   }
+
+  return 0;
+}
+
+static int make_test_dir_only(void) {
+  const char *dir = getenv("TEST_DIR");
+  if (dir == NULL) return -1;
+  mkdir(dir, 0700);
 
   return 0;
 }
@@ -515,6 +545,34 @@ static int test_state_json_write_failure_keeps_old(void) {
   return 1;
 }
 
+/* SIGCHLD while tracing, but no child left to wait for: the handler must
+   return instead of calling waitpid() forever */
+static int test_sigchld_echild_tracing(void) {
+  if (make_test_dir_only() == -1) return 2;
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    alarm(10);
+    if (!sigchld_listener_init()) _exit(2);
+
+    tracing_state = TRACING;
+    echild_mode = true;
+    kill(getpid(), SIGCHLD);
+
+    sigchld_listener_callback();
+
+    _exit(0);
+  }
+
+  int status = 0;
+  waitpid(pid, &status, 0);
+  if (WIFEXITED(status) && WEXITSTATUS(status) == 0) return 0;
+
+  printf("child status 0x%x\n", status);
+
+  return 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -529,6 +587,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "status_text_bounded") == 0) return test_status_text_bounded();
   if (strcmp(argv[1], "state_json_escapes") == 0) return test_state_json_escapes();
   if (strcmp(argv[1], "state_json_write_failure_keeps_old") == 0) return test_state_json_write_failure_keeps_old();
+  if (strcmp(argv[1], "sigchld_echild_tracing") == 0) return test_sigchld_echild_tracing();
   if (strcmp(argv[1], "listener_bind_fail_closes") == 0) return test_listener_bind_fail_closes();
 
   return 2;

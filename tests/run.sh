@@ -459,6 +459,7 @@ c_test monitor prop_write_failure_keeps_old "monitor: failed module.prop write l
 c_test monitor status_text_bounded "monitor: long daemon error text stays inside the status text"
 c_test monitor state_json_escapes "monitor: strings in state.json are JSON-escaped"
 c_test monitor state_json_write_failure_keeps_old "monitor: failed state.json write leaves the old file intact"
+c_test monitor sigchld_echild_tracing "monitor: SIGCHLD with no child left does not spin on waitpid"
 
 c_build ptracer_main "$R/tests/c/ptracer_main_test.c"
 c_test ptracer_main trace_valid_pid "zygisk-ptrace trace: a valid pid is traced"

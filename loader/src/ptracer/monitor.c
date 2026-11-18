@@ -636,8 +636,11 @@ void sigchld_listener_callback() {
     int pid;
     while ((pid = waitpid(-1, &sigchld_status, __WALL | WNOHANG)) != 0) {
       if (pid == -1) {
-        if (tracing_state == STOPPED && errno == ECHILD) break;
-        PLOGE("waitpid");
+        /* INFO: ECHILD: nothing left to wait for. Any error ends this drain
+                   loop, as waitpid() would fail the same way again. */
+        if (errno != ECHILD) PLOGE("waitpid");
+
+        break;
       }
 
       if (pid == 1) {
