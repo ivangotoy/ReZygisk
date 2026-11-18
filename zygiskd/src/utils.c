@@ -33,7 +33,8 @@ int64_t monotonic_ms(void) {
 }
 
 /* INFO: Reaps pid, polling until deadline_ms (monotonic_ms() clock): the first
-           check does not sleep, then the interval grows from 1 ms to 50 ms.
+           check does not sleep, then the interval starts at 1 ms and doubles
+           while below 50 ms (so the longest step is 64 ms).
            A child still running at the deadline is killed and waited for up
            to one more second; *status then reads as killed by SIGKILL.
            Returns true only when the child exited on its own. */
