@@ -88,7 +88,8 @@ static inline int64_t trace_monotonic_ms(void) {
 
 /* INFO: waitpid() until deadline_ms (trace_monotonic_ms() clock). A traced
            process usually stops within microseconds, so the first 100 checks
-           only yield the CPU; after that the interval grows from 50 us to 5 ms.
+           only yield the CPU; after that the interval starts at 50 us and
+           doubles while below 5 ms (so the longest step is 6.4 ms).
            Returns what waitpid() returned, or 0 when the deadline passed
            (nothing else is done: no signal is sent). */
 static inline pid_t waitpid_until(pid_t pid, int *status, int flags, int64_t deadline_ms) {
