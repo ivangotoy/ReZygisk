@@ -673,12 +673,21 @@ static void initialize_jni_hook(void) {
 
 /* INFO: Module registration and API functions */
 static void api_plt_hook_register(const char *regex, const char *symbol, void *fn, void **backup) {
-  if (!g_ctx || !regex || !symbol || !fn || g_ctx->register_info_count >= MAX_REGISTER_INFO) return;
+  if (!g_ctx || !regex || !symbol || !fn) return;
 
   regex_t re;
   if (regcomp(&re, regex, REG_NOSUB) != 0) return;
 
   pthread_mutex_lock(&g_ctx->hook_info_lock);
+
+  /* INFO: Checked under the lock, another thread may have filled the table */
+  if (g_ctx->register_info_count >= MAX_REGISTER_INFO) {
+    pthread_mutex_unlock(&g_ctx->hook_info_lock);
+
+    regfree(&re);
+
+    return;
+  }
 
   g_ctx->register_info[g_ctx->register_info_count].regex = re;
   g_ctx->register_info[g_ctx->register_info_count].symbol = strdup(symbol);
@@ -690,12 +699,21 @@ static void api_plt_hook_register(const char *regex, const char *symbol, void *f
 }
 
 static void api_plt_hook_exclude(const char *regex, const char *symbol) {
-  if (!g_ctx || !regex || g_ctx->ignore_info_count >= MAX_IGNORE_INFO) return;
+  if (!g_ctx || !regex) return;
 
   regex_t re;
   if (regcomp(&re, regex, REG_NOSUB) != 0) return;
 
   pthread_mutex_lock(&g_ctx->hook_info_lock);
+
+  /* INFO: Checked under the lock, another thread may have filled the table */
+  if (g_ctx->ignore_info_count >= MAX_IGNORE_INFO) {
+    pthread_mutex_unlock(&g_ctx->hook_info_lock);
+
+    regfree(&re);
+
+    return;
+  }
 
   g_ctx->ignore_info[g_ctx->ignore_info_count].regex = re;
   g_ctx->ignore_info[g_ctx->ignore_info_count].symbol = symbol ? strdup(symbol) : NULL;
