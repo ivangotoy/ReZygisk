@@ -56,7 +56,7 @@ static const char *t_map(const char *path, char *buf, size_t size) {
   }
   if (strncmp(path, prefix, strlen(prefix)) != 0) return path;
 
-  snprintf(buf, size, "rz/%s", path + strlen(prefix));
+  snprintf(buf, size, "%s/rz/%s", getenv("TEST_DIR"), path + strlen(prefix));
 
   return buf;
 }
@@ -76,9 +76,11 @@ static int t_stat(const char *path, struct stat *st) {
 static int t_bind(int fd, const struct sockaddr *addr, socklen_t len) {
   (void)len;
 
+  /* relative to $TEST_DIR (the listener tests chdir there): the absolute
+     path can be longer than sun_path */
   struct sockaddr_un mapped = { .sun_family = AF_UNIX };
-  char buf[PATH_MAX];
-  snprintf(mapped.sun_path, sizeof(mapped.sun_path), "%s", t_map(((const struct sockaddr_un *)addr)->sun_path, buf, sizeof(buf)));
+  const char *path = ((const struct sockaddr_un *)addr)->sun_path;
+  snprintf(mapped.sun_path, sizeof(mapped.sun_path), "rz/%s", strrchr(path, '/') + 1);
 
   return bind(fd, (struct sockaddr *)&mapped, sizeof(mapped));
 }
@@ -98,8 +100,7 @@ static char prop_path[PATH_MAX];
 
 static FILE *t_fopen(const char *path, const char *mode) {
   char buf[PATH_MAX];
-  if (strcmp(path, "/data/adb/rezygisk/state.json") == 0) path = state_path;
-  else path = t_map(path, buf, sizeof(buf));
+  path = t_map(path, buf, sizeof(buf));
 
   return (fopen)(path, mode);
 }
@@ -122,7 +123,9 @@ static int test_state_json_stop_reason(void) {
   const char *dir = getenv("TEST_DIR");
   if (dir == NULL) return 2;
   mkdir(dir, 0700);
-  snprintf(state_path, sizeof(state_path), "%s/state.json", dir);
+  snprintf(state_path, sizeof(state_path), "%s/rz", dir);
+  mkdir(state_path, 0700);
+  snprintf(state_path, sizeof(state_path), "%s/rz/state.json", dir);
   snprintf(prop_path, sizeof(prop_path), "%s/module.prop", dir);
 
   environment_information64.root_impl = "Magisk";
@@ -204,7 +207,9 @@ static int write_prop(const char *content) {
   if (dir == NULL) return -1;
   mkdir(dir, 0700);
   snprintf(prop_path, sizeof(prop_path), "%s/module.prop", dir);
-  snprintf(state_path, sizeof(state_path), "%s/state.json", dir);
+  snprintf(state_path, sizeof(state_path), "%s/rz", dir);
+  mkdir(state_path, 0700);
+  snprintf(state_path, sizeof(state_path), "%s/rz/state.json", dir);
 
   FILE *f = (fopen)(prop_path, "w");
   if (f == NULL) return -1;
@@ -462,6 +467,54 @@ static int test_state_json_escapes(void) {
   return 1;
 }
 
+/* a state.json write that fails part way keeps the old state.json */
+static int test_state_json_write_failure_keeps_old(void) {
+  if (write_prop(PROP_FIXTURE) == -1) return 2;
+
+  FILE *f = (fopen)(state_path, "w");
+  if (f == NULL) return 2;
+  fputs("{\"old\": true}\n", f);
+  (fclose)(f);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    if (!prepare_environment()) _exit(2);
+
+    static char names[40][24];
+    static char *modules[40];
+    for (int i = 0; i < 40; i++) {
+      snprintf(names[i], sizeof(names[i]), "example_module_%02d", i);
+      modules[i] = names[i];
+    }
+    environment_information64.root_impl = "Magisk";
+    environment_information64.modules = modules;
+    environment_information64.modules_len = 40;
+    status64.supported = true;
+    status64.daemon_running = true;
+
+    /* module.prop (about 330 bytes) fits, state.json (over 900) does not */
+    signal(SIGXFSZ, SIG_IGN);
+    struct rlimit lim = { .rlim_cur = 600, .rlim_max = 600 };
+    if (setrlimit(RLIMIT_FSIZE, &lim) == -1) _exit(2);
+
+    update_status(NULL);
+
+    _exit(0);
+  }
+
+  int status = 0;
+  waitpid(pid, &status, 0);
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) return 2;
+
+  char got[4096];
+  if (read_file(state_path, got, sizeof(got)) == -1) return 2;
+  if (strcmp(got, "{\"old\": true}\n") == 0) return 0;
+
+  printf("state.json after the failed write (%zu bytes): %.60s...\n", strlen(got), got);
+
+  return 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -475,6 +528,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "prop_write_failure_keeps_old") == 0) return test_prop_write_failure_keeps_old();
   if (strcmp(argv[1], "status_text_bounded") == 0) return test_status_text_bounded();
   if (strcmp(argv[1], "state_json_escapes") == 0) return test_state_json_escapes();
+  if (strcmp(argv[1], "state_json_write_failure_keeps_old") == 0) return test_state_json_write_failure_keeps_old();
   if (strcmp(argv[1], "listener_bind_fail_closes") == 0) return test_listener_bind_fail_closes();
 
   return 2;

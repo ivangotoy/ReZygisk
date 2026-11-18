@@ -925,7 +925,8 @@ static bool update_status(const char *message) {
   if (!write_module_prop(status_text)) return false;
 
   if (environment_information64.root_impl || environment_information32.root_impl) {
-    FILE *json = fopen("/data/adb/rezygisk/state.json", "w");
+    /* INFO: Same as module.prop: a temporary file renamed over state.json */
+    FILE *json = fopen("/data/adb/rezygisk/state.json.tmp", "w");
     if (json == NULL) {
       PLOGE("failed to open state.json");
 
@@ -1009,7 +1010,18 @@ static bool update_status(const char *message) {
 
     fprintf(json, "}\n");
 
-    fclose(json);
+    bool written = ferror(json) == 0;
+    if (fclose(json) != 0) written = false;
+
+    if (!written || rename("/data/adb/rezygisk/state.json.tmp", "/data/adb/rezygisk/state.json") == -1) {
+      int write_errno = errno;
+      unlink("/data/adb/rezygisk/state.json.tmp");
+      errno = write_errno;
+
+      PLOGE("failed to write state.json");
+
+      return false;
+    }
   } else {
     if (remove("/data/adb/rezygisk/state.json") == -1) {
       PLOGE("failed to remove state.json");
