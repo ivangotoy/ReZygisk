@@ -88,8 +88,20 @@ static void fake_companion(int fd) {
   }
 }
 
+/* when set, the process spawning the companion hangs instead (its pid is
+   written to $TEST_DIR/spawn.pid) */
+static bool hang_spawn = false;
+
 int t_execv(const char *file, char *const argv[]) {
   (void)file;
+
+  if (hang_spawn) {
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "%s/spawn.pid", getenv("TEST_DIR"));
+    FILE *f = fopen(path, "w");
+    if (f) { fprintf(f, "%d\n", (int)getpid()); fclose(f); }
+    sleep(30);
+  }
 
   pid_t pid = fork();
   if (pid == -1) return -1;
@@ -324,6 +336,52 @@ static int stalled_client(bool mid_request) {
     return result;
 }
 
+/* a companion spawn that never finishes: the request fails like a spawn
+   that failed (answer 0) within about one timeout, and the stuck process is gone */
+static int companion_spawn_hangs(void) {
+  alarm(5);
+  const char *dir = getenv("TEST_DIR");
+  if (dir == NULL) return 2;
+  char path[PATH_MAX];
+  snprintf(path, sizeof(path), "%s/modules", dir); mkdir(dir, 0700); mkdir(path, 0700);
+  snprintf(path, sizeof(path), "%s/modules/example", dir); mkdir(path, 0700);
+  snprintf(path, sizeof(path), "%s/modules/example/zygisk", dir); mkdir(path, 0700);
+  snprintf(path, sizeof(path), "%s/modules/example/zygisk/" ARCH_STR ".so", dir);
+  FILE *f = fopen(path, "w");
+  if (f == NULL) return 2;
+  fclose(f);
+  snprintf(path, sizeof(path), "%s/spawn.pid", dir);
+  unlink(path);
+
+  hang_spawn = true;
+  pid_t daemon = start_daemon();
+  if (daemon == -1) return 2;
+
+  int result = 1;
+  int fd = connect_daemon();
+  if (fd == -1) goto out;
+
+  uint8_t action = RequestCompanionSocket;
+  size_t index = 0;
+  if (write(fd, &action, 1) != 1 || write(fd, &index, sizeof(index)) != (ssize_t)sizeof(index)) goto out;
+
+  uint8_t ack = 9;
+  if (read(fd, &ack, 1) != 1 || ack != 0) { printf("answer %u, expected 0\n", ack); goto out; }
+  close(fd);
+
+  f = fopen(path, "r");
+  int pid = 0;
+  if (f) { if (fscanf(f, "%d", &pid) != 1) pid = 0; fclose(f); }
+  if (pid > 0 && kill(pid, 0) == -1 && errno == ESRCH) result = 0;
+  else printf("spawning process %d still exists\n", pid);
+
+  out:
+    kill(daemon, SIGKILL);
+    waitpid(daemon, NULL, 0);
+
+    return result;
+}
+
 /* the client fd handed to a module companion carries no timeout */
 static int companion_channel_untimed(void) {
   const char *dir = getenv("TEST_DIR");
@@ -379,6 +437,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "stalled_client_before_request") == 0) return stalled_client(false);
   if (strcmp(argv[1], "stalled_client_mid_request") == 0) return stalled_client(true);
   if (strcmp(argv[1], "companion_channel_untimed") == 0) return companion_channel_untimed();
+  if (strcmp(argv[1], "companion_spawn_hangs") == 0) return companion_spawn_hangs();
   if (strcmp(argv[1], "accept_econnaborted_log_fails") == 0) {
     break_stdout = true;
 

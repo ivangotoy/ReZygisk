@@ -16,11 +16,56 @@
 #include <linux/limits.h>
 #include <sched.h>
 #include <unistd.h>
+#include <time.h>
+#include <signal.h>
+#include <sys/time.h>
 
 #include "root_impl/common.h"
 #include "root_impl/kernelsu.h"
 
 #include "utils.h"
+
+int64_t monotonic_ms(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+
+  return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+/* INFO: Reaps pid, polling until deadline_ms (monotonic_ms() clock): the first
+           check does not sleep, then the interval grows from 1 ms to 50 ms.
+           A child still running at the deadline is killed and waited for up
+           to one more second; *status then reads as killed by SIGKILL.
+           Returns true only when the child exited on its own. */
+bool wait_child_until(pid_t pid, int *status, int64_t deadline_ms) {
+  int local_status = 0;
+  if (status == NULL) status = &local_status;
+
+  useconds_t interval = 1000;
+  while (1) {
+    pid_t ret = waitpid(pid, status, WNOHANG);
+    if (ret == pid) return true;
+    if (ret == -1 && errno != EINTR) return false;
+    if (monotonic_ms() >= deadline_ms) break;
+
+    usleep(interval);
+    if (interval < 50000) interval *= 2;
+  }
+
+  LOGE("Child %d did not finish in time, killing it", pid);
+
+  *status = SIGKILL;
+  kill(pid, SIGKILL);
+
+  int64_t kill_deadline = monotonic_ms() + 1000;
+  interval = 1000;
+  while (waitpid(pid, status, WNOHANG) == 0 && monotonic_ms() < kill_deadline) {
+    usleep(interval);
+    if (interval < 50000) interval *= 2;
+  }
+
+  return false;
+}
 
 bool switch_mount_namespace(pid_t pid) {
   char path[PATH_MAX];
@@ -752,6 +797,9 @@ int save_mns_fd(int pid, enum MountNamespaceState mns_state, struct root_impl im
   int socket_parent = sockets[0];
   int socket_child = sockets[1];
 
+  /* INFO: One deadline for the helper's answer and for reaping it */
+  int64_t deadline = monotonic_ms() + ZYGISKD_PEER_TIMEOUT_MS;
+
   pid_t fork_pid = fork();
   if (fork_pid < 0) {
     LOGE("fork: %s", strerror(errno));
@@ -815,12 +863,20 @@ int save_mns_fd(int pid, enum MountNamespaceState mns_state, struct root_impl im
 
   close(socket_child);
 
+  struct timeval answer_timeout = {
+    .tv_sec = ZYGISKD_PEER_TIMEOUT_MS / 1000,
+    .tv_usec = (ZYGISKD_PEER_TIMEOUT_MS % 1000) * 1000
+  };
+  if (setsockopt(socket_parent, SOL_SOCKET, SO_RCVTIMEO, &answer_timeout, sizeof(answer_timeout)) == -1) {
+    LOGW("Failed to set socket timeout: %s", strerror(errno));
+  }
+
   uint8_t has_succeeded = 0;
-  if (read_uint8_t(socket_parent, &has_succeeded) == -1) {
+  if (read_uint8_t(socket_parent, &has_succeeded) != (ssize_t)sizeof(has_succeeded)) {
     LOGE("Failed to read from socket_parent: %s", strerror(errno));
 
     close(socket_parent);
-    waitpid(fork_pid, NULL, 0);
+    wait_child_until(fork_pid, NULL, deadline);
 
     return -1;
   }
@@ -829,7 +885,7 @@ int save_mns_fd(int pid, enum MountNamespaceState mns_state, struct root_impl im
     LOGE("Failed to umount root");
 
     close(socket_parent);
-    waitpid(fork_pid, NULL, 0);
+    wait_child_until(fork_pid, NULL, deadline);
 
     return -1;
   }
@@ -842,7 +898,7 @@ int save_mns_fd(int pid, enum MountNamespaceState mns_state, struct root_impl im
     LOGE("open: %s", strerror(errno));
 
     close(socket_parent);
-    waitpid(fork_pid, NULL, 0);
+    wait_child_until(fork_pid, NULL, deadline);
 
     return -1;
   }
@@ -853,7 +909,7 @@ int save_mns_fd(int pid, enum MountNamespaceState mns_state, struct root_impl im
 
     close(ns_fd);
     close(socket_parent);
-    waitpid(fork_pid, NULL, 0);
+    wait_child_until(fork_pid, NULL, deadline);
 
     return -1;
   }
@@ -862,12 +918,12 @@ int save_mns_fd(int pid, enum MountNamespaceState mns_state, struct root_impl im
     LOGE("Failed to close socket_parent: %s", strerror(errno));
 
     close(ns_fd);
-    waitpid(fork_pid, NULL, 0);
+    wait_child_until(fork_pid, NULL, deadline);
 
     return -1;
   }
 
-  if (waitpid(fork_pid, NULL, 0) == -1) {
+  if (!wait_child_until(fork_pid, NULL, deadline)) {
     LOGE("waitpid: %s", strerror(errno));
 
     close(ns_fd);

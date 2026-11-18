@@ -49,10 +49,6 @@ struct rzd_info_payload {
 /* INFO: How long a peer may stall in the middle of a request (client
            request bytes and replies, companion handshake) before it is
            dropped. Never applied to idle waits. */
-#ifndef ZYGISKD_PEER_TIMEOUT_MS
-  #define ZYGISKD_PEER_TIMEOUT_MS 10000
-#endif
-
 static void set_peer_timeout(int fd, int timeout_ms) {
   struct timeval tv = {
     .tv_sec = timeout_ms / 1000,
@@ -211,7 +207,7 @@ static int spawn_companion(char *restrict argv[], char *restrict name, int lib_f
     set_peer_timeout(daemon_fd, ZYGISKD_PEER_TIMEOUT_MS);
 
     int status = 0;
-    waitpid(pid, &status, 0);
+    wait_child_until(pid, &status, monotonic_ms() + ZYGISKD_PEER_TIMEOUT_MS);
 
     if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
       LOGE("Exited with status %d", status);

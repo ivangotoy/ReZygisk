@@ -435,6 +435,10 @@ c_test zygiskd_utils clean_ns_unshare_fails "zygiskd save_mns_fd: failed unshare
 c_test zygiskd_utils clean_ns_failure_reaps_child "zygiskd save_mns_fd: failure reaps the helper child"
 c_test zygiskd_utils mounted_ns_logs_no_error "zygiskd save_mns_fd: success logs no error"
 
+# helpers with a 200 ms ZYGISKD_PEER_TIMEOUT_MS
+c_build zygiskd_utils_timeout "$R/tests/c/zygiskd_utils_test.c" -DZYGISKD_PEER_TIMEOUT_MS=200
+c_test zygiskd_utils_timeout clean_ns_helper_hangs "zygiskd save_mns_fd: a namespace helper stuck in umount is killed and fails in time"
+
 c_build zygiskd_common "$R/tests/c/zygiskd_common_test.c"
 c_test zygiskd_common uid_from_pkg_found "zygiskd uid_from_pkg: installed package gives its app id"
 c_test zygiskd_common uid_from_pkg_missing "zygiskd uid_from_pkg: missing package gives 0"
@@ -453,6 +457,7 @@ c_build zygiskd_daemon_timeout "$R/tests/c/zygiskd_daemon_test.c" "$R/zygiskd/sr
 c_test zygiskd_daemon_timeout stalled_client_before_request "zygiskd: a client stuck before its request is dropped after the timeout"
 c_test zygiskd_daemon_timeout stalled_client_mid_request "zygiskd: a client stuck in the middle of a request is dropped after the timeout"
 c_test zygiskd_daemon_timeout companion_channel_untimed "zygiskd: the client fd handed to a companion carries no timeout"
+c_test zygiskd_daemon_timeout companion_spawn_hangs "zygiskd: a companion spawn that never finishes fails the request in time"
 
 c_build zygiskd_companion "$R/tests/c/zygiskd_companion_test.c" "$R/zygiskd/src/utils.c"
 c_test zygiskd_companion survives_gone_client "zygiskd companion: a client gone before its ack does not end the companion"

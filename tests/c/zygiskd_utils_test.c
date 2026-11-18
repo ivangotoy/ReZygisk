@@ -2,6 +2,7 @@
    functions are reachable; libc calls that need a device are redirected
    with function-like macros defined before the include. */
 #include <errno.h>
+#include <signal.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,7 +23,10 @@ static int t_fclose(FILE *f);
 /* namespace calls: setns succeeds, unshare fails, umount2 is recorded */
 static int t_umount2(const char *target, int flags);
 #define setns(fd, type) ((void)(fd), (void)(type), 0)
-#define unshare(flags) ((void)(flags), errno = EPERM, -1)
+/* unshare fails unless a test clears unshare_fails */
+static bool unshare_fails = true;
+static bool hang_in_umount = false;
+#define unshare(flags) ((void)(flags), unshare_fails ? (errno = EPERM, -1) : 0)
 #define umount2(t, f) t_umount2(t, f)
 
 #include "../../zygiskd/src/utils.c"
@@ -155,6 +159,14 @@ static int test_sockcreate_no_leak(void) {
 static int t_umount2(const char *target, int flags) {
   (void)flags;
 
+  if (hang_in_umount) {
+    char pidfile[PATH_MAX];
+    snprintf(pidfile, sizeof(pidfile), "%s/helper.pid", getenv("TEST_DIR"));
+    FILE *p = (fopen)(pidfile, "w");
+    if (p) { fprintf(p, "%d\n", (int)getpid()); (fclose)(p); }
+    sleep(30);
+  }
+
   char log[PATH_MAX];
   snprintf(log, sizeof(log), "%s/umounts", getenv("TEST_DIR"));
 
@@ -243,6 +255,88 @@ static int test_mounted_ns_logs_no_error(void) {
   return 1;
 }
 
+/* ---- time limits (built with a short ZYGISKD_PEER_TIMEOUT_MS) ---- */
+#include <time.h>
+
+#ifndef ZYGISKD_PEER_TIMEOUT_MS
+#define ZYGISKD_PEER_TIMEOUT_MS 10000
+#endif
+
+static double now_s(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+
+  return ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+/* pid a test child wrote to $TEST_DIR/<name>; 0 when missing */
+static pid_t recorded_pid(const char *name) {
+  char path[PATH_MAX];
+  snprintf(path, sizeof(path), "%s/%s", getenv("TEST_DIR"), name);
+  FILE *f = (fopen)(path, "r");
+  if (f == NULL) return 0;
+  int pid = 0;
+  if (fscanf(f, "%d", &pid) != 1) pid = 0;
+  (fclose)(f);
+
+  return pid;
+}
+
+/* the child is gone: not running and not left as a zombie */
+static int child_gone(pid_t pid) {
+  if (pid <= 0) return 0;
+  if (kill(pid, 0) == -1 && errno == ESRCH) return 1;
+
+  printf("child %d still exists\n", (int)pid);
+
+  return 0;
+}
+
+static int exec_timeout(const char *script, bool want_ok, const char *want_out) {
+  alarm(5);
+  if (make_test_dir() == -1) return 2;
+  if (chdir(getenv("TEST_DIR")) == -1) return 2;
+  unlink("child.pid");
+
+  const char *const argv[] = { "sh", "-c", script, NULL };
+  char buf[32];
+  memset(buf, 'X', sizeof(buf));
+
+  double start = now_s();
+  bool ok = exec_command(buf, sizeof(buf), "/bin/sh", argv);
+  double took = now_s() - start;
+
+  if (ok != want_ok) { printf("exec_command returned %d after %.2f s\n", ok, took); return 1; }
+  if (want_out && strcmp(buf, want_out) != 0) { printf("output \"%s\", expected \"%s\"\n", buf, want_out); return 1; }
+  if (!want_ok && took > 2.5 * ZYGISKD_PEER_TIMEOUT_MS / 1000.0) { printf("took %.2f s\n", took); return 1; }
+  if (!want_ok && !child_gone(recorded_pid("child.pid"))) return 1;
+
+  return 0;
+}
+
+/* namespace helper stuck in umount: save_mns_fd fails in time, helper gone */
+static int test_clean_ns_helper_hangs(void) {
+  alarm(5);
+  if (make_test_dir() == -1) return 2;
+
+  snprintf(mountinfo_path, sizeof(mountinfo_path), "%s/mountinfo", getenv("TEST_DIR"));
+  FILE *f = (fopen)(mountinfo_path, "w");
+  if (f == NULL) return 2;
+  fprintf(f, "36 20 0:20 / /data/adb/modules rw,relatime shared:2 - tmpfs magisk rw\n");
+  (fclose)(f);
+
+  unshare_fails = false;
+  hang_in_umount = true;
+
+  double start = now_s();
+  int fd = save_mns_fd(getpid(), Clean, (struct root_impl){ .impl = Magisk, .variant = 0 });
+  double took = now_s() - start;
+
+  if (fd != -1 || took > 2.5 * ZYGISKD_PEER_TIMEOUT_MS / 1000.0) { printf("save_mns_fd %d after %.2f s\n", fd, took); return 1; }
+
+  return child_gone(recorded_pid("helper.pid")) ? 0 : 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -253,6 +347,11 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "current_attr_bounds") == 0) return test_current_attr_bounds();
   if (strcmp(argv[1], "sockcreate_no_leak") == 0) return test_sockcreate_no_leak();
   if (strcmp(argv[1], "clean_ns_unshare_fails") == 0) return test_clean_ns_unshare_fails();
+  if (strcmp(argv[1], "clean_ns_helper_hangs") == 0) return test_clean_ns_helper_hangs();
+  if (strcmp(argv[1], "exec_output") == 0) return exec_timeout("echo hello", true, "hello");
+  if (strcmp(argv[1], "exec_split_output") == 0) return exec_timeout("printf 12; sleep 0.1; printf '345\\n'", true, "12345");
+  if (strcmp(argv[1], "exec_child_hangs") == 0) return exec_timeout("echo $$ > child.pid; exec sleep 30", false, NULL);
+  if (strcmp(argv[1], "exec_child_hangs_after_closing") == 0) return exec_timeout("echo $$ > child.pid; exec >&-; exec sleep 30", false, NULL);
   if (strcmp(argv[1], "clean_ns_failure_reaps_child") == 0) return test_clean_ns_failure_reaps_child();
   if (strcmp(argv[1], "mounted_ns_logs_no_error") == 0) return test_mounted_ns_logs_no_error();
 

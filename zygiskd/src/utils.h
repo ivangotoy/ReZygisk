@@ -65,6 +65,16 @@
 #define read_func_def(type)               \
   ssize_t read_## type(int fd, type *val)
 
+/* INFO: How long a peer or a helper process may keep the daemon waiting
+           (milliseconds; a build may override it with -D) */
+#ifndef ZYGISKD_PEER_TIMEOUT_MS
+  #define ZYGISKD_PEER_TIMEOUT_MS 10000
+#endif
+
+int64_t monotonic_ms(void);
+
+bool wait_child_until(pid_t pid, int *status, int64_t deadline_ms);
+
 bool switch_mount_namespace(pid_t pid);
 
 void get_property(const char *name, char *restrict output);
