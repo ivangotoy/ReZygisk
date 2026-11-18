@@ -60,7 +60,12 @@ static int t_open(const char *path, int flags, ...) { char b[PATH_MAX]; return o
 /* Stand-in for the companion process: handshake like companion_entry(),
    then for each client fd report through it whether that fd blocks
    without a timeout (ack 1) or not (ack 2 or 3). */
+/* when set, the companion never answers its handshake */
+static bool stall_companion = false;
+
 static void fake_companion(int fd) {
+  if (stall_companion) sleep(30);
+
   char name[257];
   if (read_string(fd, name, sizeof(name)) == -1) _exit(1);
   int lib = read_fd(fd);
@@ -336,6 +341,45 @@ static int stalled_client(bool mid_request) {
     return result;
 }
 
+/* a companion that never answers its handshake: the request fails like a
+   failed spawn (answer 0), within about one timeout */
+static int companion_handshake_stalls(void) {
+  alarm(5);
+  const char *dir = getenv("TEST_DIR");
+  if (dir == NULL) return 2;
+  char path[PATH_MAX];
+  snprintf(path, sizeof(path), "%s/modules", dir); mkdir(dir, 0700); mkdir(path, 0700);
+  snprintf(path, sizeof(path), "%s/modules/example", dir); mkdir(path, 0700);
+  snprintf(path, sizeof(path), "%s/modules/example/zygisk", dir); mkdir(path, 0700);
+  snprintf(path, sizeof(path), "%s/modules/example/zygisk/" ARCH_STR ".so", dir);
+  FILE *f = fopen(path, "w");
+  if (f == NULL) return 2;
+  fclose(f);
+
+  stall_companion = true;
+  pid_t daemon = start_daemon();
+  if (daemon == -1) return 2;
+
+  int result = 1;
+  int fd = connect_daemon();
+  if (fd == -1) goto out;
+
+  uint8_t action = RequestCompanionSocket;
+  size_t index = 0;
+  if (write(fd, &action, 1) != 1 || write(fd, &index, sizeof(index)) != (ssize_t)sizeof(index)) goto out;
+
+  uint8_t ack = 9;
+  if (read(fd, &ack, 1) == 1 && ack == 0) result = 0;
+  else printf("answer %u, expected 0\n", ack);
+  close(fd);
+
+  out:
+    kill(daemon, SIGKILL);
+    waitpid(daemon, NULL, 0);
+
+    return result;
+}
+
 /* a companion spawn that never finishes: the request fails like a spawn
    that failed (answer 0) within about one timeout, and the stuck process is gone */
 static int companion_spawn_hangs(void) {
@@ -438,6 +482,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "stalled_client_mid_request") == 0) return stalled_client(true);
   if (strcmp(argv[1], "companion_channel_untimed") == 0) return companion_channel_untimed();
   if (strcmp(argv[1], "companion_spawn_hangs") == 0) return companion_spawn_hangs();
+  if (strcmp(argv[1], "companion_handshake_stalls") == 0) return companion_handshake_stalls();
   if (strcmp(argv[1], "accept_econnaborted_log_fails") == 0) {
     break_stdout = true;
 
