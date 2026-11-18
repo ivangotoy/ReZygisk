@@ -39,7 +39,7 @@ async function _getModuleNames(modules) {
 
   const result = await exec(fullCommand)
   if (result.errno !== 0) {
-    setError('getModuleNames', 'Failed to execute command to retrieve module list names')
+    toast('Failed to execute command to retrieve module list names')
 
     return null
   }
@@ -49,6 +49,8 @@ async function _getModuleNames(modules) {
 
 async function _updateDynamicElement() {
   const ReZygiskState = await _getReZygiskState()
+  /* INFO: state.json unreadable or invalid: nothing to list */
+  if (!ReZygiskState) return
   const all_modules = []
   const strings = await getStrings(whichCurrentPage())
 
@@ -81,12 +83,12 @@ async function _updateDynamicElement() {
     document.getElementById('modules_list_not_avaliable').style.display = 'none'
 
     const module_names = await _getModuleNames(all_modules)
-    module_names.forEach((module_name, i) => all_modules[i].name = module_name)
+    if (module_names) module_names.forEach((module_name, i) => all_modules[i].name = module_name)
 
     all_modules.forEach((module) => {
       modules_list.innerHTML +=
         `<div class="dim card" style="padding: 25px 15px; cursor: pointer;">
-          <div class="dimc" style="font-size: 1.1em;">${escapeHtml(module.name)}</div>
+          <div class="dimc" style="font-size: 1.1em;">${escapeHtml(module.name || module.id)}</div>
           <div class="dimc desc" style="font-size: 0.9em; margin-top: 3px; white-space: nowrap; align-items: center; display: flex;">
             <div class="dimc arch_desc">${strings.arch}</div>
             <div class="dimc" style="margin-left: 5px;">${module.bitsUsed.join(' / ')}</div>

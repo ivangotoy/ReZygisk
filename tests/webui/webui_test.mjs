@@ -15,7 +15,8 @@ cpSync(join(root, 'webroot', 'js'), join(web, 'js'), { recursive: true })
 cpSync(join(root, 'webroot', 'lang'), join(web, 'lang'), { recursive: true })
 writeFileSync(join(web, 'package.json'), '{"type":"module"}\n')
 
-process.on('unhandledRejection', () => {})
+const rejections = []
+process.on('unhandledRejection', (e) => rejections.push(e))
 
 // anything: a value every DOM access works on
 const anything = new Proxy(function () {}, {
@@ -28,6 +29,7 @@ const handlers = {}
 const commands = []
 let stateJson = '{}'
 let moduleNamesStdout = ''
+let failing = null
 
 globalThis.window = new Proxy({
   addEventListener: (name, fn) => { (handlers[name] ||= []).push(fn) },
@@ -65,7 +67,8 @@ globalThis.ksu = {
   exec: (command, options, callback) => {
     commands.push(command)
     const stdout = command.includes('state.json') ? stateJson : command.includes('module.prop') ? moduleNamesStdout : ''
-    setTimeout(() => globalThis[callback](0, stdout, ''), 0)
+    const errno = failing && command.includes(failing) ? 1 : 0
+    setTimeout(() => globalThis[callback](errno, errno ? '' : stdout, ''), 0)
   },
   toast: () => {},
   fullScreen: () => {}
@@ -149,6 +152,27 @@ switch (testCase) {
 
     const html = elements.modules_list ? elements.modules_list.innerHTML : ''
     if (!html.includes('&lt;img src=x onerror=&quot;ksu.exec(&#39;reboot&#39;)&quot;&gt; &amp; Example') || html.includes('<img')) fail(`modules_list: ${html}`)
+    break
+  }
+  case 'modules_state_unreadable': {
+    failing = 'state.json'
+    const modules = await import(pathToFileURL(join(web, 'js', 'pages', 'modules', 'index.js')))
+    rejections.length = 0
+    await modules.loadOnceView()
+    await settle()
+    if (rejections.length) fail(`page update failed: ${rejections[0]}`)
+    break
+  }
+  case 'modules_names_unreadable': {
+    stateJson = JSON.stringify({ rezygiskd: { 64: { modules: ['example_module'] } } })
+    failing = 'module.prop'
+    const modules = await import(pathToFileURL(join(web, 'js', 'pages', 'modules', 'index.js')))
+    rejections.length = 0
+    await modules.loadOnceView()
+    await settle()
+    if (rejections.length) fail(`page update failed: ${rejections[0]}`)
+    const html = elements.modules_list ? elements.modules_list.innerHTML : ''
+    if (!html.includes('example_module')) fail(`modules_list without the module: ${html}`)
     break
   }
   case 'credit_link_quoted': {

@@ -555,6 +555,8 @@ node_test rejection_log_literal "WebUI: rejection reason reaches the log file li
 node_test module_ids_validated "WebUI: module ids outside the module id charset never reach the shell"
 node_test credit_link_quoted "WebUI: a credit link reaches am start as one quoted word"
 node_test module_names_escaped "WebUI: module names are shown as text, not parsed as HTML"
+node_test modules_state_unreadable "WebUI: the modules page survives an unreadable state.json"
+node_test modules_names_unreadable "WebUI: the modules page lists modules when their names cannot be read"
 
 echo "passed $PASSED failed $FAILED skipped $SKIPPED"
 if [ "$FAILED" -ne 0 ]; then exit 1; fi
