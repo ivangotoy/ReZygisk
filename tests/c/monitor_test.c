@@ -436,6 +436,32 @@ static int test_sections_exact_fit(void) {
   return 1;
 }
 
+/* strings in state.json are JSON-escaped */
+static int test_state_json_escapes(void) {
+  if (write_prop(PROP_FIXTURE) == -1) return 2;
+  if (!prepare_environment()) return 2;
+
+  static char *modules[] = { "example_module" };
+  environment_information64.root_impl = "Magisk";
+  environment_information64.modules = modules;
+  environment_information64.modules_len = 1;
+  status64.supported = true;
+  status64.daemon_running = false;
+  status64.daemon_error_info = "exited: \"quoted\" back\\slash\ttab";
+
+  update_status(NULL);
+
+  char got[4096];
+  if (read_file(state_path, got, sizeof(got)) == -1) return 2;
+
+  const char *want = "\"reason\": \"exited: \\\"quoted\\\" back\\\\slash\\u0009tab\"";
+  if (strstr(got, want) && strstr(got, "\"modules\": [\"example_module\"]")) return 0;
+
+  printf("state.json:\n%s\nexpected to contain: %s\n", got, want);
+
+  return 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -448,6 +474,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "prop_rewrite_exact") == 0) return test_prop_rewrite_exact();
   if (strcmp(argv[1], "prop_write_failure_keeps_old") == 0) return test_prop_write_failure_keeps_old();
   if (strcmp(argv[1], "status_text_bounded") == 0) return test_status_text_bounded();
+  if (strcmp(argv[1], "state_json_escapes") == 0) return test_state_json_escapes();
   if (strcmp(argv[1], "listener_bind_fail_closes") == 0) return test_listener_bind_fail_closes();
 
   return 2;
