@@ -196,6 +196,11 @@ expect_eq "uninstall: removes runtime dir and service.d hook" "rm -rf /data/adb/
 rm -f /data/adb/service.d/rezygisk.sh
 rmdir /data/adb/service.d" "$(cat "$L")"
 
+new_case uninstallbusy
+stub rm; stub rmdir 1
+(PATH="$S:$ORIG_PATH" sh "$R/module/src/uninstall.sh") > "$C/out" 2>&1
+expect_eq "uninstall: service.d still holding other scripts exits 0" 0 "$?"
+
 echo "== rezygisk.sh"
 if [ -e /data/adb/modules/rezygisk/disable ]; then
   skip "rezygisk.sh: enabled module" "host has /data/adb/modules/rezygisk/disable"
