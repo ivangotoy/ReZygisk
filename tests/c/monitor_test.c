@@ -712,6 +712,33 @@ static int test_status_no_line_injection(void) {
   return 1;
 }
 
+/* lines before the description that nearly fill pre_section must not
+   push out the "description=" key itself */
+static int test_pre_section_keeps_key(void) {
+  char content[4096], pad[1001];
+  memset(pad, 'p', 1000); pad[1000] = '\0';
+  /* "id=rezygisk\n" (12) + "pad=" + 1000 + "\n" = 1017 bytes before the description */
+  snprintf(content, sizeof(content), "id=rezygisk\npad=%s\ndescription=Standalone implementation of Zygisk.\nupdateJson=https://example.invalid/update.json\n", pad);
+  if (write_prop(content) == -1) return 2;
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    if (!prepare_environment()) _exit(2);
+
+    size_t pre = strlen(pre_section);
+    if (pre >= strlen("description=") && strcmp(pre_section + pre - strlen("description="), "description=") == 0) _exit(0);
+
+    printf("pre_section (%zu bytes) ends: %s\n", pre, pre > 30 ? pre_section + pre - 30 : pre_section);
+
+    _exit(1);
+  }
+
+  int status = 0;
+  waitpid(pid, &status, 0);
+
+  return WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -721,6 +748,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "listener_stale_path") == 0) return test_listener_stale_path();
   if (strcmp(argv[1], "sections_bounded") == 0) return test_sections_bounded();
   if (strcmp(argv[1], "sections_exact_fit") == 0) return test_sections_exact_fit();
+  if (strcmp(argv[1], "pre_section_keeps_key") == 0) return test_pre_section_keeps_key();
   if (strcmp(argv[1], "prop_rewrite_exact") == 0) return test_prop_rewrite_exact();
   if (strcmp(argv[1], "prop_write_failure_keeps_old") == 0) return test_prop_write_failure_keeps_old();
   if (strcmp(argv[1], "status_text_bounded") == 0) return test_status_text_bounded();

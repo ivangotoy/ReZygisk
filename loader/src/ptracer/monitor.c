@@ -1095,7 +1095,8 @@ static bool prepare_environment() {
       /* INFO: One byte stays free for the description's newline */
       append_section(after, sizeof(after) - 1, line);
     } else {
-      append_section(pre_section, sizeof(pre_section), line);
+      /* INFO: Room stays free for the "description=" key */
+      append_section(pre_section, sizeof(pre_section) - strlen("description="), line);
     }
 
     /* INFO: A description longer than line arrives in several reads */
