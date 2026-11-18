@@ -41,6 +41,10 @@ static int t_stat(const char *path, struct stat *st);
 #define stat(p, s) t_stat(p, s)
 static pid_t t_waitpid(pid_t pid, int *status, int options);
 #define waitpid(p, s, o) t_waitpid(p, s, o)
+/* malloc: the largest request is recorded */
+static size_t max_malloc = 0;
+static void *t_malloc(size_t size);
+#define malloc(n) t_malloc(n)
 
 #include "../../loader/src/ptracer/monitor.c"
 
@@ -50,6 +54,13 @@ static pid_t t_waitpid(pid_t pid, int *status, int options);
 #undef remove
 #undef stat
 #undef waitpid
+#undef malloc
+
+static void *t_malloc(size_t size) {
+  if (size > max_malloc) max_malloc = size;
+
+  return malloc(size);
+}
 
 /* waitpid(): reports ECHILD (no child left) when echild_mode is set,
    and ends the process if it is called over and over */
@@ -739,6 +750,37 @@ static int test_pre_section_keeps_key(void) {
   return WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : 1;
 }
 
+/* a daemon info datagram claiming more modules than it carries must not
+   make the monitor allocate for that count */
+static int test_info_module_count_bounded(void) {
+  if (write_prop(PROP_FIXTURE) == -1) return 2;
+  if (!prepare_environment()) return 2;
+
+  int sv[2];
+  if (socketpair(AF_UNIX, SOCK_DGRAM | SOCK_NONBLOCK, 0, sv) == -1) return 2;
+  monitor_sock_fd = sv[0];
+
+  char packet[sizeof(struct rzd_msg_header) + sizeof(struct rzd_info_payload) + 2];
+  memset(packet, 0, sizeof(packet));
+  struct rzd_msg_header *hdr = (struct rzd_msg_header *)packet;
+  hdr->cmd = DAEMON64_SET_INFO;
+  hdr->len = (uint32_t)(sizeof(packet) - sizeof(struct rzd_msg_header));
+  struct rzd_info_payload *info = (struct rzd_info_payload *)hdr->data;
+  memcpy(info->impl, "Magisk", 7);
+  info->modules_count = 0xFFFFFFFFu;
+  info->data[0] = 'a';
+  if (send(sv[1], packet, sizeof(packet), 0) != (ssize_t)sizeof(packet)) return 2;
+
+  max_malloc = 0;
+  rezygiskd_listener_callback();
+
+  if (max_malloc < 4096) return 0;
+
+  printf("largest allocation %zu bytes for a 2-byte module list\n", max_malloc);
+
+  return 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -758,6 +800,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "daemon_exit_updates_status") == 0) return test_daemon_exit_updates_status();
   if (strcmp(argv[1], "auto_stop_updates_status") == 0) return test_auto_stop_updates_status();
   if (strcmp(argv[1], "status_no_line_injection") == 0) return test_status_no_line_injection();
+  if (strcmp(argv[1], "info_module_count_bounded") == 0) return test_info_module_count_bounded();
   if (strcmp(argv[1], "listener_bind_fail_closes") == 0) return test_listener_bind_fail_closes();
 
   return 2;

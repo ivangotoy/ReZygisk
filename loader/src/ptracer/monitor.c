@@ -331,6 +331,17 @@ void rezygiskd_listener_callback() {
           environment_information->modules = NULL;
         }
 
+        /* INFO: Each module name takes at least its NUL byte, so a count above the
+                   bytes left is truncated data (and could overflow the size below) */
+        if (info->modules_count > (size_t)((char *)msg + nread - info->data)) {
+          LOGE("Found truncated %s modules, %u announced", daemon_name, info->modules_count);
+
+          free((void *)environment_information->root_impl);
+          environment_information->root_impl = NULL;
+
+          break;
+        }
+
         environment_information->modules_len = info->modules_count;
         environment_information->modules = info->modules_count > 0 ? malloc(info->modules_count * sizeof(char *)) : NULL;
         if (info->modules_count > 0 && environment_information->modules == NULL) {
