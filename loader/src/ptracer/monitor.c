@@ -7,6 +7,7 @@
 #include <sys/epoll.h>
 #include <sys/signalfd.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <sys/wait.h>
 
@@ -849,20 +850,40 @@ static char post_section[1024];
     }                                                                                \
   }
 
-static bool update_status(const char *message) {
-  FILE *prop = fopen("/data/adb/modules/rezygisk/module.prop", "w");
+#define MODULE_PROP_PATH "/data/adb/modules/rezygisk/module.prop"
+#define MODULE_PROP_TMP_PATH MODULE_PROP_PATH ".tmp"
+
+/* INFO: Writes a temporary file next to module.prop and renames it over, so
+           a failed or interrupted write leaves the old module.prop in place. */
+static bool write_module_prop(const char *status) {
+  FILE *prop = fopen(MODULE_PROP_TMP_PATH, "w");
   if (prop == NULL) {
     PLOGE("failed to open prop");
 
     return false;
   }
 
-  if (message) {
-    fprintf(prop, "%s[%s] %s", pre_section, message, post_section);
-    fclose(prop);
+  struct stat st;
+  if (stat(MODULE_PROP_PATH, &st) == 0) fchmod(fileno(prop), st.st_mode & 07777);
 
-    return true;
+  bool written = fprintf(prop, "%s[%s] %s", pre_section, status, post_section) >= 0;
+  if (fclose(prop) != 0) written = false;
+
+  if (!written || rename(MODULE_PROP_TMP_PATH, MODULE_PROP_PATH) == -1) {
+    int write_errno = errno;
+    unlink(MODULE_PROP_TMP_PATH);
+    errno = write_errno;
+
+    PLOGE("failed to write prop");
+
+    return false;
   }
+
+  return true;
+}
+
+static bool update_status(const char *message) {
+  if (message) return write_module_prop(message);
 
   char status_text[256] = "Monitor: ";
   switch (tracing_state) {
@@ -887,8 +908,7 @@ static bool update_status(const char *message) {
   WRITE_STATUS_ABI(64)
   WRITE_STATUS_ABI(32)
 
-  fprintf(prop, "%s[%s] %s", pre_section, status_text, post_section);
-  fclose(prop);
+  if (!write_module_prop(status_text)) return false;
 
   if (environment_information64.root_impl || environment_information32.root_impl) {
     FILE *json = fopen("/data/adb/rezygisk/state.json", "w");

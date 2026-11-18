@@ -11,6 +11,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include <sys/resource.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -30,21 +31,46 @@ static FILE *t_fopen(const char *path, const char *mode);
 static const char *t_map(const char *path, char *buf, size_t size);
 static int t_bind(int fd, const struct sockaddr *addr, socklen_t len);
 static int t_unlink(const char *path);
+static int t_rename(const char *from, const char *to);
+static int t_stat(const char *path, struct stat *st);
 #define bind(fd, a, l) t_bind(fd, a, l)
 #define unlink(p) t_unlink(p)
+#define rename(a, b) t_rename(a, b)
+#define stat(p, s) t_stat(p, s)
 
 #include "../../loader/src/ptracer/monitor.c"
 
 #undef bind
 #undef unlink
+#undef rename
+#undef stat
 
+/* /data/adb/modules/rezygisk/<f> is mapped to $TEST_DIR/<f> */
 static const char *t_map(const char *path, char *buf, size_t size) {
   const char *prefix = "/data/adb/rezygisk/";
+  const char *modprefix = "/data/adb/modules/rezygisk/";
+  if (strncmp(path, modprefix, strlen(modprefix)) == 0) {
+    snprintf(buf, size, "%s/%s", getenv("TEST_DIR"), path + strlen(modprefix));
+
+    return buf;
+  }
   if (strncmp(path, prefix, strlen(prefix)) != 0) return path;
 
   snprintf(buf, size, "rz/%s", path + strlen(prefix));
 
   return buf;
+}
+
+static int t_rename(const char *from, const char *to) {
+  char a[PATH_MAX], b[PATH_MAX];
+
+  return rename(t_map(from, a, sizeof(a)), t_map(to, b, sizeof(b)));
+}
+
+static int t_stat(const char *path, struct stat *st) {
+  char buf[PATH_MAX];
+
+  return stat(t_map(path, buf, sizeof(buf)), st);
 }
 
 static int t_bind(int fd, const struct sockaddr *addr, socklen_t len) {
@@ -71,8 +97,9 @@ static char state_path[PATH_MAX];
 static char prop_path[PATH_MAX];
 
 static FILE *t_fopen(const char *path, const char *mode) {
+  char buf[PATH_MAX];
   if (strcmp(path, "/data/adb/rezygisk/state.json") == 0) path = state_path;
-  else if (strcmp(path, "/data/adb/modules/rezygisk/module.prop") == 0) path = prop_path;
+  else path = t_map(path, buf, sizeof(buf));
 
   return (fopen)(path, mode);
 }
@@ -226,6 +253,94 @@ static int test_sections_bounded(void) {
   return 1;
 }
 
+static int read_file(const char *path, char *buf, size_t size) {
+  FILE *f = (fopen)(path, "r");
+  if (f == NULL) return -1;
+  size_t n = fread(buf, 1, size - 1, f);
+  buf[n] = '\0';
+  (fclose)(f);
+
+  return 0;
+}
+
+#define PROP_FIXTURE \
+  "id=rezygisk\nname=ReZygisk\nversion=v1.0.0 (1-abcdef0-release)\nversionCode=1\n" \
+  "author=The PerformanC Organization\ndescription=Standalone implementation of Zygisk.\n" \
+  "updateJson=https://example.invalid/update.json\nmanagedFeatures=kernel_umount\n"
+
+/* normal rewrite: only the description changes, the mode is kept */
+static int test_prop_rewrite_exact(void) {
+  if (write_prop(PROP_FIXTURE) == -1) return 2;
+  if (chmod(prop_path, 0640) == -1) return 2;
+
+  if (!prepare_environment()) return 2;
+  tracing_state = TRACING;
+  status64.supported = true;
+  status64.daemon_running = true;
+  status64.zygote_injected = true;
+
+  if (!update_status(NULL)) {
+    printf("update_status failed\n");
+
+    return 1;
+  }
+
+  char got[4096];
+  if (read_file(prop_path, got, sizeof(got)) == -1) return 2;
+
+  const char *want =
+    "id=rezygisk\nname=ReZygisk\nversion=v1.0.0 (1-abcdef0-release)\nversionCode=1\n"
+    "author=The PerformanC Organization\ndescription=[Monitor: \u2705, ReZygisk 64-bit: \u2705] Standalone implementation of Zygisk.\n"
+    "updateJson=https://example.invalid/update.json\nmanagedFeatures=kernel_umount\n";
+  if (strcmp(got, want) != 0) {
+    printf("module.prop:\n%s\n", got);
+
+    return 1;
+  }
+
+  struct stat st;
+  if (stat(prop_path, &st) == -1) return 2;
+  if ((st.st_mode & 07777) != 0640) {
+    printf("mode %o, expected 640\n", (unsigned)(st.st_mode & 07777));
+
+    return 1;
+  }
+
+  return 0;
+}
+
+/* a write that fails part way (file size limit, like a full disk) must
+   leave the old module.prop as it was */
+static int test_prop_write_failure_keeps_old(void) {
+  if (write_prop(PROP_FIXTURE) == -1) return 2;
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    if (!prepare_environment()) _exit(2);
+    status64.supported = true;
+
+    signal(SIGXFSZ, SIG_IGN);
+    struct rlimit lim = { .rlim_cur = 100, .rlim_max = 100 };
+    if (setrlimit(RLIMIT_FSIZE, &lim) == -1) _exit(2);
+
+    update_status(NULL);
+
+    _exit(0);
+  }
+
+  int status = 0;
+  waitpid(pid, &status, 0);
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) return 2;
+
+  char got[4096];
+  if (read_file(prop_path, got, sizeof(got)) == -1) return 2;
+  if (strcmp(got, PROP_FIXTURE) == 0) return 0;
+
+  printf("module.prop after the failed write (%zu bytes):\n%s\n", strlen(got), got);
+
+  return 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -234,6 +349,8 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "state_json_stop_reason") == 0) return test_state_json_stop_reason();
   if (strcmp(argv[1], "listener_stale_path") == 0) return test_listener_stale_path();
   if (strcmp(argv[1], "sections_bounded") == 0) return test_sections_bounded();
+  if (strcmp(argv[1], "prop_rewrite_exact") == 0) return test_prop_rewrite_exact();
+  if (strcmp(argv[1], "prop_write_failure_keeps_old") == 0) return test_prop_write_failure_keeps_old();
   if (strcmp(argv[1], "listener_bind_fail_closes") == 0) return test_listener_bind_fail_closes();
 
   return 2;
