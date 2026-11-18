@@ -1,0 +1,86 @@
+/* Host tests for how zygiskd/src/root_impl/apatch.c and magisk.c parse
+   the output of the root manager binaries. exec_command() returns canned
+   output, access() and uid_from_pkg() are stand-ins. */
+#include <errno.h>
+#include <limits.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+/* values of common.mk */
+#define MIN_APATCH_VERSION 10655
+#define MIN_MAGISK_VERSION 26402
+
+#define exec_command t_exec
+#define uid_from_pkg t_uid_from_pkg
+#define access(p, m) ((void)(p), (void)(m), 0)
+
+#include "../../zygiskd/src/root_impl/apatch.c"
+#include "../../zygiskd/src/root_impl/magisk.c"
+
+/* canned output: <text>, a NUL, then <after> at byte offset <after_at>
+   (bytes past the string model whatever the stack buffer held) */
+static const char *out_text = "";
+static const char *out_after = "";
+static size_t out_after_at = 0;
+static char last_pkg[256];
+
+bool t_exec(char *restrict buf, size_t len, const char *restrict file, const char *const argv[]) {
+  (void)file; (void)argv;
+
+  memset(buf, 0, len);
+  snprintf(buf, len, "%s", out_text);
+  if (out_after_at + strlen(out_after) < len) memcpy(buf + out_after_at, out_after, strlen(out_after));
+
+  return true;
+}
+
+uid_t t_uid_from_pkg(const char *restrict pkg) {
+  snprintf(last_pkg, sizeof(last_pkg), "%s", pkg);
+
+  return 10123;
+}
+
+static int apatch_state(const char *text, const char *after, size_t after_at) {
+  out_text = text; out_after = after; out_after_at = after_at;
+  setenv("PATH", "/data/adb/ap/bin:/system/bin", 1);
+
+  struct root_impl_state state = { .state = Inexistent };
+  apatch_get_existence(&state);
+
+  return state.state;
+}
+
+static int magisk_manager_pkg(const char *text, const char *after, size_t after_at, const char *want) {
+  out_text = text; out_after = after; out_after_at = after_at;
+  last_pkg[0] = '\0';
+
+  magisk_uid_is_manager(10123);
+  if (strcmp(last_pkg, want) == 0) return 0;
+
+  printf("manager package looked up: \"%s\", expected \"%s\"\n", last_pkg, want);
+
+  return 1;
+}
+
+int main(int argc, char **argv) {
+  if (argc != 2) return 2;
+
+  setvbuf(stdout, NULL, _IONBF, 0);
+
+  if (strcmp(argv[1], "apatch_version") == 0) return apatch_state("apd 10763", "", 0) == Supported ? 0 : 1;
+  if (strcmp(argv[1], "apatch_empty_output") == 0) {
+    int state = apatch_state("", "10763", 4);
+    if (state == Abnormal) return 0;
+
+    printf("empty apd -V output gave state %d\n", state);
+
+    return 1;
+  }
+  if (strcmp(argv[1], "magisk_requester") == 0) return magisk_manager_pkg("value=com.example.hidden", "", 0, "com.example.hidden");
+  if (strcmp(argv[1], "magisk_short_output") == 0) return magisk_manager_pkg("abc", "com.example.stale", 6, "com.topjohnwu.magisk");
+
+  return 2;
+}

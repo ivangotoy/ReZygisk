@@ -45,7 +45,8 @@ void apatch_get_existence(struct root_impl_state *state) {
     return;
   }
 
-  int version = atoi(apatch_version + strlen("apd "));
+  int version = 0;
+  if (strlen(apatch_version) > strlen("apd ")) version = atoi(apatch_version + strlen("apd "));
 
   if (version == 0) state->state = Abnormal;
   else if (version >= MIN_APATCH_VERSION && version <= 999999) state->state = Supported;
