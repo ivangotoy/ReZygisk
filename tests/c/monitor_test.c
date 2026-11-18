@@ -32,10 +32,12 @@ static const char *t_map(const char *path, char *buf, size_t size);
 static int t_bind(int fd, const struct sockaddr *addr, socklen_t len);
 static int t_unlink(const char *path);
 static int t_rename(const char *from, const char *to);
+static int t_remove(const char *path);
 static int t_stat(const char *path, struct stat *st);
 #define bind(fd, a, l) t_bind(fd, a, l)
 #define unlink(p) t_unlink(p)
 #define rename(a, b) t_rename(a, b)
+#define remove(p) t_remove(p)
 #define stat(p, s) t_stat(p, s)
 static pid_t t_waitpid(pid_t pid, int *status, int options);
 #define waitpid(p, s, o) t_waitpid(p, s, o)
@@ -45,6 +47,7 @@ static pid_t t_waitpid(pid_t pid, int *status, int options);
 #undef bind
 #undef unlink
 #undef rename
+#undef remove
 #undef stat
 #undef waitpid
 
@@ -87,6 +90,12 @@ static int t_rename(const char *from, const char *to) {
   char a[PATH_MAX], b[PATH_MAX];
 
   return rename(t_map(from, a, sizeof(a)), t_map(to, b, sizeof(b)));
+}
+
+static int t_remove(const char *path) {
+  char buf[PATH_MAX];
+
+  return remove(t_map(path, buf, sizeof(buf)));
 }
 
 static int t_stat(const char *path, struct stat *st) {
