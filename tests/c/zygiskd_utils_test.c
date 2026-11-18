@@ -208,6 +208,41 @@ static int test_clean_ns_failure_reaps_child(void) {
   return 1;
 }
 
+/* a successful save_mns_fd(Mounted) logs no error (LOGx used without
+   braces under an if must stay a single statement) */
+static int test_mounted_ns_logs_no_error(void) {
+  if (make_test_dir() == -1) return 2;
+
+  char out[PATH_MAX];
+  snprintf(out, sizeof(out), "%s/stdout", getenv("TEST_DIR"));
+  int fd = open(out, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+  if (fd == -1) return 2;
+
+  int saved = dup(STDOUT_FILENO);
+  dup2(fd, STDOUT_FILENO);
+  close(fd);
+
+  struct root_impl impl = { .impl = Magisk, .variant = 0 };
+  int ns_fd = save_mns_fd(getpid(), Mounted, impl);
+
+  dup2(saved, STDOUT_FILENO);
+  close(saved);
+
+  if (ns_fd == -1) return 2;
+
+  char buf[1024] = { 0 };
+  FILE *f = (fopen)(out, "r");
+  if (f == NULL) return 2;
+  fread(buf, 1, sizeof(buf) - 1, f);
+  (fclose)(f);
+
+  if (strstr(buf, "Failed") == NULL) return 0;
+
+  printf("logged on success: %s\n", buf);
+
+  return 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -219,6 +254,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "sockcreate_no_leak") == 0) return test_sockcreate_no_leak();
   if (strcmp(argv[1], "clean_ns_unshare_fails") == 0) return test_clean_ns_unshare_fails();
   if (strcmp(argv[1], "clean_ns_failure_reaps_child") == 0) return test_clean_ns_failure_reaps_child();
+  if (strcmp(argv[1], "mounted_ns_logs_no_error") == 0) return test_mounted_ns_logs_no_error();
 
   return 2;
 }

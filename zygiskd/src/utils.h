@@ -22,17 +22,23 @@
   #define LOG_TAG "zygiskd" LP_SELECT("32", "64")
 #endif
 
-#define LOGI(...)                                              \
-  __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__); \
-  printf(__VA_ARGS__)
+#define LOGI(...)                                                \
+  do {                                                           \
+    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__); \
+    printf(__VA_ARGS__);                                         \
+  } while (0)
 
 #define LOGW(...)                                                \
-  __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__);   \
-  printf(__VA_ARGS__)
+  do {                                                           \
+    __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__); \
+    printf(__VA_ARGS__);                                         \
+  } while (0)
 
-#define LOGE(...)                                                \
-  __android_log_print(ANDROID_LOG_ERROR , LOG_TAG, __VA_ARGS__); \
-  printf(__VA_ARGS__)
+#define LOGE(...)                                                 \
+  do {                                                            \
+    __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__); \
+    printf(__VA_ARGS__);                                          \
+  } while (0)
 
 #define ASSURE_SIZE_WRITE(area_name, subarea_name, sent_size, expected_size, return_type)                        \
   if (sent_size != (ssize_t)(expected_size)) {                                                                   \
