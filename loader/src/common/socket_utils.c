@@ -176,6 +176,12 @@ char *read_string(int fd) {
     return NULL;
   }
 
+  if (str_len == SIZE_MAX) {
+    LOGE("Failed to read string: Length %zu does not fit with its terminator.\n", str_len);
+
+    return NULL;
+  }
+
   char *buf = malloc(str_len + 1);
   if (buf == NULL) {
     PLOGE("allocate memory for string");

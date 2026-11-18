@@ -429,6 +429,10 @@ c_test monitor state_json_stop_reason "monitor: state.json with a stop reason is
 c_build loader_daemon "$R/tests/c/loader_daemon_test.c" "$R/loader/src/common/socket_utils.c"
 c_test loader_daemon get_info_daemon_down "loader rezygiskd_get_info: daemon down leaves an empty, freeable info"
 
+c_build loader_socket "$R/tests/c/loader_socket_test.c"
+c_test loader_socket read_string_value "loader read_string: reads a string"
+c_test loader_socket read_string_huge_length "loader read_string: SIZE_MAX length is refused before allocating"
+
 echo "passed $PASSED failed $FAILED skipped $SKIPPED"
 if [ "$FAILED" -ne 0 ]; then exit 1; fi
 if [ "${REZYGISK_REQUIRE_CC:-}" = 1 ] && [ "$CC_SKIPPED" -ne 0 ]; then
