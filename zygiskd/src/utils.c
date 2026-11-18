@@ -101,7 +101,7 @@ static bool get_current_attr(char *restrict output, size_t size) {
     return false;
   }
 
-  size_t ret = fread(output, 1, size, current);
+  size_t ret = fread(output, 1, size - 1, current);
   if (ferror(current)) {
     LOGE("fread: %s", strerror(errno));
 

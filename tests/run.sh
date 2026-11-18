@@ -405,6 +405,7 @@ c_test() {
 c_build zygiskd_utils "$R/tests/c/zygiskd_utils_test.c"
 c_test zygiskd_utils read_string_value "zygiskd read_string: reads a string"
 c_test zygiskd_utils read_string_empty "zygiskd read_string: empty string is NUL-terminated"
+c_test zygiskd_utils current_attr_bounds "zygiskd get_current_attr: stays inside the buffer"
 
 echo "passed $PASSED failed $FAILED skipped $SKIPPED"
 if [ "$FAILED" -ne 0 ]; then exit 1; fi
