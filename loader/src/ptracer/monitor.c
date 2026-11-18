@@ -1223,6 +1223,13 @@ int send_control_command(enum rezygiskd_command cmd) {
     .cmd = cmd,
     .len = 0
   };
+  /* INFO: The monitor not reading its queue must not block the command */
+  struct timeval tv = {
+    .tv_sec = REZYGISK_TRACE_TIMEOUT_MS / 1000,
+    .tv_usec = (REZYGISK_TRACE_TIMEOUT_MS % 1000) * 1000
+  };
+  if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) == -1) PLOGE("set socket timeout");
+
   ssize_t nsend = sendto(sockfd, (void *)&msg, sizeof(msg), 0, (struct sockaddr *)&addr, socklen);
 
   close(sockfd);

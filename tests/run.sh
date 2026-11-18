@@ -499,6 +499,7 @@ c_test monitor ctl_start_seize_fails "monitor: ctl start stays stopped when init
 # monitor waits with a short REZYGISK_TRACE_TIMEOUT_MS
 c_build monitor_timeout "$R/tests/c/monitor_test.c" -DREZYGISK_TRACE_TIMEOUT_MS=200
 c_test monitor_timeout stop_wait_times_out "monitor: an app_process that never reports its stop is resumed, not killed or left stopped"
+c_test monitor_timeout ctl_queue_full "zygisk-ptrace ctl: a monitor whose queue is full fails the command in time"
 
 c_build ptracer_main "$R/tests/c/ptracer_main_test.c"
 c_test ptracer_main trace_valid_pid "zygisk-ptrace trace: a valid pid is traced"
