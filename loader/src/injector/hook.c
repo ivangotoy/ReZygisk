@@ -1094,6 +1094,10 @@ static bool load_modules_only(void) {
     return false;
   }
 
+  /* INFO: ReZygiskd closes the gap of every module it removes, so module i is
+             at index i minus the removals that succeeded before it. */
+  size_t removed = 0;
+
   for (size_t i = 0; i < ms.modules_count; i++) {
     const char *lib_path = ms.modules[i];
 
@@ -1105,7 +1109,7 @@ static bool load_modules_only(void) {
            Zygote library and the available modules in ReZygiskd. */
       /* TODO: Update the list of modules for ReZygisk monitor, so that it can update
                  for WebUI. That is simply cosmetic, though. */
-      rezygiskd_remove_module(i);
+      if (rezygiskd_remove_module(i - removed)) removed++;
 
       continue;
     }
@@ -1116,7 +1120,7 @@ static bool load_modules_only(void) {
 
       csoloader_unload(&zygisk_modules[zygisk_module_length].lib);
 
-      rezygiskd_remove_module(i);
+      if (rezygiskd_remove_module(i - removed)) removed++;
 
       continue;
     }
@@ -1130,7 +1134,7 @@ static bool load_modules_only(void) {
 
       csoloader_unload(&zygisk_modules[zygisk_module_length].lib);
 
-      rezygiskd_remove_module(i);
+      if (rezygiskd_remove_module(i - removed)) removed++;
 
       continue;
     }
