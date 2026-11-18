@@ -525,6 +525,10 @@ c_test loader_misc last_line_without_newline "loader parse_maps: last line witho
 c_build ptracer_trace "$R/tests/c/ptracer_trace_test.c"
 c_test ptracer_trace sigcont_detaches "zygisk-ptrace trace_zygote: SIGCONT after injection detaches and succeeds"
 c_test ptracer_trace unexpected_stop_detaches "zygisk-ptrace trace_zygote: another stop after injection detaches and keeps the injected zygote"
+c_test ptracer_trace seize_wait_times_out "zygisk-ptrace trace_zygote: a timed-out wait after seize fails at once"
+c_test ptracer_trace group_stop_wait_times_out "zygisk-ptrace trace_zygote: a timed-out wait after injection fails"
+c_test ptracer_trace sigcont_wait_times_out "zygisk-ptrace trace_zygote: a timed-out wait for SIGCONT fails instead of claiming a detach"
+c_test ptracer_trace final_wait_times_out "zygisk-ptrace trace_zygote: a timed-out last wait fails instead of claiming a detach"
 
 c_build remote_csoloader "$R/tests/c/remote_csoloader_test.c" "$R/loader/src/common/socket_utils.c"
 c_test remote_csoloader short_phdr_read "remote_csoloader: program headers cut by the end of the file are refused"

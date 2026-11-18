@@ -163,6 +163,19 @@ bool trace_zygote(int pid, bool tango_flag) {
     WAIT_OR_DIE;
   }
 
+  /* INFO: No stop after the seize (the wait failed or timed out): the later
+             waits would only add up before the same failure */
+  if (!WIFSTOPPED(status)) {
+    char status_str[64];
+    parse_status(status, status_str, sizeof(status_str));
+
+    LOGE("Expected a stop after seizing, found: %s", status_str);
+
+    ptrace(PTRACE_DETACH, pid, 0, 0);
+
+    return false;
+  }
+
   kill(pid, SIGCONT);
   ptrace(PTRACE_SYSCALL, pid, 0, 0);
 
@@ -215,7 +228,13 @@ bool trace_zygote(int pid, bool tango_flag) {
 
         WAIT_OR_DIE
 
-        ptrace(PTRACE_DETACH, pid, 0, SIGCONT);
+        /* INFO: Fails when zygote is not stopped (the wait timed out): the
+                   tracer then exits still attached, so report the failure */
+        if (ptrace(PTRACE_DETACH, pid, 0, SIGCONT) == -1) {
+          PLOGE("detach");
+
+          return false;
+        }
       } else {
         char status_str[64];
         parse_status(status, status_str, sizeof(status_str));
@@ -224,7 +243,11 @@ bool trace_zygote(int pid, bool tango_flag) {
 
         /* INFO: Injection already succeeded: detach and keep zygote running,
                    as before, instead of having the caller kill it. */
-        ptrace(PTRACE_DETACH, pid, 0, 0);
+        if (ptrace(PTRACE_DETACH, pid, 0, 0) == -1) {
+          PLOGE("detach");
+
+          return false;
+        }
       }
     } else {
       char status_str[64];

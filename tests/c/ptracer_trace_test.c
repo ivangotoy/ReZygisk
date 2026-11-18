@@ -19,16 +19,27 @@
 static const char *t_sys_signame[65];
 
 static int detached = 0;
+static int sigkills = 0;
 static long t_ptrace(int request, ...);
 #define ptrace(...) t_ptrace(__VA_ARGS__)
-#define kill(pid, sig) ((void)(pid), (void)(sig), 0)
+#define kill(pid, sig) ((void)(pid), ((sig) == SIGKILL ? sigkills++ : 0), 0)
 
 #include "../../loader/src/ptracer/ptracer.c"
 
 #undef ptrace
 #undef kill
 
+/* a timed-out wait reports exited 255 while the tracee keeps running; ptrace
+   requests on a running tracee fail */
+static int last_status = 0;
+#define TIMED_OUT (255 << 8)
+
 static long t_ptrace(int request, ...) {
+  if (last_status == TIMED_OUT) {
+    errno = ESRCH;
+
+    return -1;
+  }
   if (request == PTRACE_DETACH) detached++;
 
   return 0;
@@ -44,10 +55,12 @@ static int script_len = 0, script_pos = 0;
 void wait_for_trace(int pid, int *status, int flags) {
   (void)pid; (void)flags;
   *status = script_pos < script_len ? script[script_pos++] : 0;
+  last_status = *status;
 }
 
-bool wait_for_ptrace_syscall_stop(int pid, int *status) { (void)pid; *status = 0; return true; }
-bool wait_linker_ready(int pid, uintptr_t *resolved, uintptr_t *slot) { (void)pid; *resolved = 0x1000; *slot = 0x2000; return true; }
+static int later_waits = 0;
+bool wait_for_ptrace_syscall_stop(int pid, int *status) { (void)pid; *status = 0; later_waits++; return true; }
+bool wait_linker_ready(int pid, uintptr_t *resolved, uintptr_t *slot) { (void)pid; *resolved = 0x1000; *slot = 0x2000; later_waits++; return true; }
 bool ptrace_poke_uintptr(int pid, uintptr_t addr, uintptr_t value) { (void)pid; (void)addr; (void)value; return true; }
 bool get_regs(int pid, struct user_regs_struct *regs) { (void)pid; memset(regs, 0, sizeof(*regs)); return true; }
 bool set_regs(int pid, struct user_regs_struct *regs) { (void)pid; (void)regs; return true; }
@@ -85,6 +98,23 @@ static int run(int last, bool want_ok) {
   return 1;
 }
 
+/* a wait that times out at <pos> of the normal sequence: trace_zygote fails
+   (the caller then kills zygote, as for any failed injection) without
+   claiming a detach it could not do, and kills nothing itself */
+static int timed_out_at(int pos, int want_later_waits) {
+  int s[] = { EVENT_STOP(SIGSTOP), PLAIN_STOP(SIGSEGV), EVENT_STOP(SIGTRAP), PLAIN_STOP(SIGCONT), PLAIN_STOP(SIGTRAP) };
+  s[pos] = TIMED_OUT;
+  memcpy(script, s, sizeof(s));
+  script_len = 5;
+
+  bool ok = trace_zygote(1234, false);
+  if (!ok && sigkills == 0 && (want_later_waits < 0 || later_waits == want_later_waits)) return 0;
+
+  printf("trace_zygote returned %d, %d SIGKILL(s), %d later wait(s); expected 0, 0, %d\n", ok, sigkills, later_waits, want_later_waits);
+
+  return 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -92,6 +122,10 @@ int main(int argc, char **argv) {
 
   if (strcmp(argv[1], "sigcont_detaches") == 0) return run(PLAIN_STOP(SIGCONT), true);
   if (strcmp(argv[1], "unexpected_stop_detaches") == 0) return run(PLAIN_STOP(SIGSEGV), true);
+  if (strcmp(argv[1], "seize_wait_times_out") == 0) return timed_out_at(0, 0);
+  if (strcmp(argv[1], "group_stop_wait_times_out") == 0) return timed_out_at(2, -1);
+  if (strcmp(argv[1], "sigcont_wait_times_out") == 0) return timed_out_at(3, -1);
+  if (strcmp(argv[1], "final_wait_times_out") == 0) return timed_out_at(4, -1);
 
   return 2;
 }
