@@ -432,6 +432,8 @@ c_test zygiskd_rootimpl magisk_sql_max_quotes "zygiskd Magisk: longest all-quote
 
 c_build monitor "$R/tests/c/monitor_test.c"
 c_test monitor state_json_stop_reason "monitor: state.json with a stop reason is valid JSON"
+c_test monitor listener_stale_path "monitor: stale init_monitor socket path does not block the bind"
+c_test monitor listener_bind_fail_closes "monitor: failed bind closes the socket"
 
 c_build ptracer_main "$R/tests/c/ptracer_main_test.c"
 c_test ptracer_main trace_valid_pid "zygisk-ptrace trace: a valid pid is traced"

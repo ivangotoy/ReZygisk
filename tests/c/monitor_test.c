@@ -7,7 +7,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/un.h>
+#include <unistd.h>
 
 #define sigabbrev_np t_sigabbrev_np
 #define sys_signame t_sys_signame
@@ -20,7 +24,43 @@ static const char *t_sys_signame[65];
 static FILE *t_fopen(const char *path, const char *mode);
 #define fopen(p, m) t_fopen(p, m)
 
+/* paths under /data/adb/rezygisk/ are mapped to rz/ relative to the
+   current dir ($TEST_DIR in the listener tests), short enough for sun_path */
+static const char *t_map(const char *path, char *buf, size_t size);
+static int t_bind(int fd, const struct sockaddr *addr, socklen_t len);
+static int t_unlink(const char *path);
+#define bind(fd, a, l) t_bind(fd, a, l)
+#define unlink(p) t_unlink(p)
+
 #include "../../loader/src/ptracer/monitor.c"
+
+#undef bind
+#undef unlink
+
+static const char *t_map(const char *path, char *buf, size_t size) {
+  const char *prefix = "/data/adb/rezygisk/";
+  if (strncmp(path, prefix, strlen(prefix)) != 0) return path;
+
+  snprintf(buf, size, "rz/%s", path + strlen(prefix));
+
+  return buf;
+}
+
+static int t_bind(int fd, const struct sockaddr *addr, socklen_t len) {
+  (void)len;
+
+  struct sockaddr_un mapped = { .sun_family = AF_UNIX };
+  char buf[PATH_MAX];
+  snprintf(mapped.sun_path, sizeof(mapped.sun_path), "%s", t_map(((const struct sockaddr_un *)addr)->sun_path, buf, sizeof(buf)));
+
+  return bind(fd, (struct sockaddr *)&mapped, sizeof(mapped));
+}
+
+static int t_unlink(const char *path) {
+  char buf[PATH_MAX];
+
+  return unlink(t_map(path, buf, sizeof(buf)));
+}
 
 int fork_dont_care() { return -1; }
 void parse_status(int status, char *buf, size_t len) { (void)status; snprintf(buf, len, "test"); }
@@ -82,12 +122,63 @@ static int test_state_json_stop_reason(void) {
   return 0;
 }
 
+static int make_rz_dir(void) {
+  const char *dir = getenv("TEST_DIR");
+  if (dir == NULL) return -1;
+  mkdir(dir, 0700);
+
+  char rz[PATH_MAX];
+  snprintf(rz, sizeof(rz), "%s/rz", dir);
+  if (mkdir(rz, 0700) == -1 && errno != EEXIST) return -1;
+
+  return chdir(dir);
+}
+
+/* a socket file left by an earlier monitor must not block the bind */
+static int test_listener_stale_path(void) {
+  if (make_rz_dir() == -1) return 2;
+
+  int fd = open("rz/" SOCKET_NAME, O_WRONLY | O_CREAT, 0600);
+  if (fd == -1) return 2;
+  close(fd);
+
+  if (rezygiskd_listener_init()) return 0;
+
+  printf("bind failed over a stale socket path\n");
+
+  return 1;
+}
+
+/* a failed bind must not leave the socket open */
+static int test_listener_bind_fail_closes(void) {
+  const char *dir = getenv("TEST_DIR");
+  if (dir == NULL) return 2;
+  mkdir(dir, 0700);
+  char empty[PATH_MAX];
+  snprintf(empty, sizeof(empty), "%s/empty", dir);
+  mkdir(empty, 0700);
+  if (chdir(empty) == -1) return 2;
+
+  /* no rz/ dir: bind fails with ENOENT */
+  if (rezygiskd_listener_init()) return 2;
+
+  if (monitor_sock_fd >= 0 && fcntl(monitor_sock_fd, F_GETFD) != -1) {
+    printf("socket fd %d still open after the failed bind\n", monitor_sock_fd);
+
+    return 1;
+  }
+
+  return 0;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
   setvbuf(stdout, NULL, _IONBF, 0);
 
   if (strcmp(argv[1], "state_json_stop_reason") == 0) return test_state_json_stop_reason();
+  if (strcmp(argv[1], "listener_stale_path") == 0) return test_listener_stale_path();
+  if (strcmp(argv[1], "listener_bind_fail_closes") == 0) return test_listener_bind_fail_closes();
 
   return 2;
 }

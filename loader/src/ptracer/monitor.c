@@ -150,9 +150,15 @@ bool rezygiskd_listener_init() {
 
   size_t sun_path_len = sprintf(addr.sun_path, "%s/%s", rezygiskd_get_path(), SOCKET_NAME);
 
+  /* INFO: A socket file left by an earlier monitor would make bind fail */
+  if (unlink(addr.sun_path) == -1 && errno != ENOENT) PLOGE("unlink stale socket");
+
   socklen_t socklen = sizeof(sa_family_t) + sun_path_len;
   if (bind(monitor_sock_fd, (struct sockaddr *)&addr, socklen) == -1) {
     PLOGE("bind socket");
+
+    close(monitor_sock_fd);
+    monitor_sock_fd = -1;
 
     return false;
   }
