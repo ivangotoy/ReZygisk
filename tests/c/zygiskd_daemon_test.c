@@ -467,6 +467,92 @@ static int companion_channel_untimed(void) {
     return result;
 }
 
+/* a module dir with <n> zygisk modules for this ABI */
+static int make_modules(int n) {
+  const char *dir = getenv("TEST_DIR");
+  if (dir == NULL) return -1;
+  char path[PATH_MAX];
+  mkdir(dir, 0700);
+  snprintf(path, sizeof(path), "%s/modules", dir); mkdir(path, 0700);
+  for (int i = 0; i < n; i++) {
+    snprintf(path, sizeof(path), "%s/modules/example%d", dir, i); mkdir(path, 0700);
+    snprintf(path, sizeof(path), "%s/modules/example%d/zygisk", dir, i); mkdir(path, 0700);
+    snprintf(path, sizeof(path), "%s/modules/example%d/zygisk/" ARCH_STR ".so", dir, i);
+    FILE *f = fopen(path, "w");
+    if (f == NULL) return -1;
+    fclose(f);
+  }
+
+  return 0;
+}
+
+static size_t module_count(void) {
+  int fd = connect_daemon();
+  if (fd == -1) return (size_t)-1;
+  uint8_t action = GetInfo;
+  uint32_t flags = 0, pid = 0;
+  size_t count = (size_t)-1;
+  if (write(fd, &action, 1) != 1 || read(fd, &flags, 4) != 4 || read(fd, &pid, 4) != 4 || read(fd, &count, sizeof(count)) != (ssize_t)sizeof(count)) count = (size_t)-1;
+  close(fd);
+
+  return count;
+}
+
+/* a request whose client gave up (closed) before zygiskd got to it is not
+   carried out: while one client stalls the daemon, another sends a request
+   and closes */
+static int gone_client(bool remove_module) {
+  alarm(10);
+  if (make_modules(2) == -1) return 2;
+
+  pid_t daemon = start_daemon();
+  if (daemon == -1) return 2;
+
+  int result = 1;
+  /* other cases of this binary may have left modules in the shared dir */
+  size_t before = module_count();
+
+  int stall = connect_daemon();
+  if (stall == -1) goto out;
+
+  int gone = connect_daemon();
+  if (gone == -1) goto out;
+  if (remove_module) {
+    uint8_t action = RemoveModule;
+    size_t index = 0;
+    if (write(gone, &action, 1) != 1 || write(gone, &index, sizeof(index)) != (ssize_t)sizeof(index)) goto out;
+  } else {
+    uint8_t action = GetProcessFlags;
+    uint32_t uid = 10123;
+    if (write(gone, &action, 1) != 1 || write(gone, &uid, 4) != 4 || write_string(gone, "com.example.gone") == -1) goto out;
+  }
+  close(gone);
+  close(stall);
+
+  usleep((ZYGISKD_PEER_TIMEOUT_MS * 2 + 100) * 1000);
+
+  if (remove_module) {
+    size_t count = module_count();
+    if (count == before && before >= 2) result = 0;
+    else printf("%zu module(s) left, expected %zu\n", count, before);
+  } else {
+    int fd = connect_daemon();
+    if (fd == -1) goto out;
+    uint8_t action = GetProcessFlags;
+    uint32_t uid = 10124, flags = 0;
+    if (write(fd, &action, 1) == 1 && write(fd, &uid, 4) == 4 && write_string(fd, "com.example.live") != -1 &&
+        read(fd, &flags, 4) == 4 && (flags & PROCESS_IS_FIRST_STARTED)) result = 0;
+    else printf("first live client got flags 0x%x without PROCESS_IS_FIRST_STARTED\n", flags);
+    close(fd);
+  }
+
+  out:
+    kill(daemon, SIGKILL);
+    waitpid(daemon, NULL, 0);
+
+    return result;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -482,6 +568,8 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "stalled_client_mid_request") == 0) return stalled_client(true);
   if (strcmp(argv[1], "companion_channel_untimed") == 0) return companion_channel_untimed();
   if (strcmp(argv[1], "companion_spawn_hangs") == 0) return companion_spawn_hangs();
+  if (strcmp(argv[1], "gone_client_remove_module") == 0) return gone_client(true);
+  if (strcmp(argv[1], "gone_client_process_flags") == 0) return gone_client(false);
   if (strcmp(argv[1], "companion_handshake_stalls") == 0) return companion_handshake_stalls();
   if (strcmp(argv[1], "accept_econnaborted_log_fails") == 0) {
     break_stdout = true;

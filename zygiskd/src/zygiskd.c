@@ -458,11 +458,7 @@ void zygiskd_start(char *restrict argv[]) {
         }
 
         uint32_t flags = 0;
-        if (first_process) {
-          flags |= PROCESS_IS_FIRST_STARTED;
-
-          first_process = false;
-        }
+        if (first_process) flags |= PROCESS_IS_FIRST_STARTED;
 
         if (uid_is_manager(uid)) {
           flags |= PROCESS_IS_MANAGER;
@@ -497,6 +493,10 @@ void zygiskd_start(char *restrict argv[]) {
 
         ret = write_uint32_t(client_fd, flags);
         ASSURE_SIZE_WRITE("GetProcessFlags", "flags", ret, sizeof(flags), break);
+
+        /* INFO: Used up only by a process that got the answer (a client that
+                   gave up before it does not count) */
+        first_process = false;
 
         break;
       }
@@ -707,6 +707,14 @@ void zygiskd_start(char *restrict argv[]) {
 
           ret = write_uint8_t(client_fd, 0);
           ASSURE_SIZE_WRITE("RemoveModule", "response", ret, sizeof(uint8_t), break);
+
+          break;
+        }
+
+        /* INFO: The client gave up (timed out and closed) before this request was
+                   reached: it does not count the removal as done, so neither may we */
+        if (!check_unix_socket(client_fd, false)) {
+          LOGW("Client left before its RemoveModule was handled, ignoring it");
 
           break;
         }

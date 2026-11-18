@@ -479,6 +479,8 @@ c_test zygiskd_daemon_timeout stalled_client_mid_request "zygiskd: a client stuc
 c_test zygiskd_daemon_timeout companion_channel_untimed "zygiskd: the client fd handed to a companion carries no timeout"
 c_test zygiskd_daemon_timeout companion_spawn_hangs "zygiskd: a companion spawn that never finishes fails the request in time"
 c_test zygiskd_daemon_timeout companion_handshake_stalls "zygiskd: a companion that never answers its handshake fails the request in time"
+c_test zygiskd_daemon_timeout gone_client_remove_module "zygiskd: a RemoveModule whose client already left is not carried out"
+c_test zygiskd_daemon_timeout gone_client_process_flags "zygiskd: a flags request whose client already left does not use up the first-process flag"
 
 c_build zygiskd_companion "$R/tests/c/zygiskd_companion_test.c" "$R/zygiskd/src/utils.c"
 c_test zygiskd_companion survives_gone_client "zygiskd companion: a client gone before its ack does not end the companion"
