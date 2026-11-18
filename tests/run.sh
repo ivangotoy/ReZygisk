@@ -475,6 +475,10 @@ c_build ptracer_utils "$R/tests/c/ptracer_utils_test.c"
 c_test ptracer_utils fork_ok "zygisk-ptrace fork_dont_care: grandchild gets 0, caller a pid"
 c_test ptracer_utils second_fork_fails "zygisk-ptrace fork_dont_care: failed second fork returns -1 to the caller only"
 
+c_build loader_misc "$R/tests/c/loader_misc_test.c"
+c_test loader_misc maps_parsed "loader parse_maps: entries parsed and freed"
+c_test loader_misc empty_maps_no_leak "loader parse_maps: no mapping found leaves nothing allocated"
+
 c_build loader_daemon "$R/tests/c/loader_daemon_test.c" "$R/loader/src/common/socket_utils.c"
 c_test loader_daemon get_info_daemon_down "loader rezygiskd_get_info: daemon down leaves an empty, freeable info"
 

@@ -156,6 +156,7 @@ struct maps_info *parse_maps(const char *pid) {
   if (info_array->length == 0) {
     LOGE("Failed to find any maps in %s", pid);
 
+    free(info_array->maps);
     free(info_array);
 
     return NULL;
