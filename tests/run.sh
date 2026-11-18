@@ -409,6 +409,10 @@ c_test zygiskd_utils current_attr_bounds "zygiskd get_current_attr: stays inside
 c_test zygiskd_utils sockcreate_no_leak "zygiskd set_socket_create_context: failed write closes the file"
 c_test zygiskd_utils clean_ns_unshare_fails "zygiskd save_mns_fd: failed unshare unmounts nothing"
 
+c_build zygiskd_common "$R/tests/c/zygiskd_common_test.c"
+c_test zygiskd_common uid_from_pkg_found "zygiskd uid_from_pkg: installed package gives its app id"
+c_test zygiskd_common uid_from_pkg_missing "zygiskd uid_from_pkg: missing package gives 0"
+
 echo "passed $PASSED failed $FAILED skipped $SKIPPED"
 if [ "$FAILED" -ne 0 ]; then exit 1; fi
 if [ "${REZYGISK_REQUIRE_CC:-}" = 1 ] && [ "$CC_SKIPPED" -ne 0 ]; then

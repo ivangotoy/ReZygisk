@@ -121,6 +121,7 @@ uid_t uid_from_pkg(const char *restrict pkg) {
   }
 
   struct dirent *entry; struct stat st;
+  bool found = false;
   while ((entry = readdir(dir)) != NULL) {
     /* INFO: Skip "." and ".." */
     if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
@@ -137,10 +138,14 @@ uid_t uid_from_pkg(const char *restrict pkg) {
       continue;
     }
 
+    found = true;
+
     break;
   }
 
   closedir(dir);
+
+  if (!found) return 0;
 
   return APP_ID(st.st_uid);
 }
