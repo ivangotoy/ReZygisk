@@ -20,9 +20,10 @@
   #define REZYGISK_TRACE_TIMEOUT_MS 10000
 #endif
 /* INFO: A remote call runs code in zygote, which itself may wait on ReZygiskd
-           (connect retries and one request) */
+           (up to 4 s of connect retries and one request). Kept below the 30 s
+           window in which the monitor counts zygote restarts. */
 #ifndef REZYGISK_REMOTE_CALL_TIMEOUT_MS
-  #define REZYGISK_REMOTE_CALL_TIMEOUT_MS (REZYGISK_TRACE_TIMEOUT_MS + ZYGISKD_PEER_TIMEOUT_MS + 5000)
+  #define REZYGISK_REMOTE_CALL_TIMEOUT_MS (REZYGISK_TRACE_TIMEOUT_MS + ZYGISKD_PEER_TIMEOUT_MS)
 #endif
 
 #define APP_ID(uid) uid % 100000
