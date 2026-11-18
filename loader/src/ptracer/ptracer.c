@@ -222,9 +222,9 @@ bool trace_zygote(int pid, bool tango_flag) {
 
         LOGE("Expected SIGCONT, found: %s", status_str);
 
+        /* INFO: Injection already succeeded: detach and keep zygote running,
+                   as before, instead of having the caller kill it. */
         ptrace(PTRACE_DETACH, pid, 0, 0);
-
-        return false;
       }
     } else {
       char status_str[64];

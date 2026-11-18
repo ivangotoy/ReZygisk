@@ -91,7 +91,7 @@ int main(int argc, char **argv) {
   setvbuf(stdout, NULL, _IONBF, 0);
 
   if (strcmp(argv[1], "sigcont_detaches") == 0) return run(PLAIN_STOP(SIGCONT), true);
-  if (strcmp(argv[1], "unexpected_stop_fails") == 0) return run(PLAIN_STOP(SIGSEGV), false);
+  if (strcmp(argv[1], "unexpected_stop_detaches") == 0) return run(PLAIN_STOP(SIGSEGV), true);
 
   return 2;
 }
