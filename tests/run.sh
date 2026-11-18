@@ -380,6 +380,32 @@ else
   bad "customize: supported Magisk device passes the gates" "rc=$rc; $(cat "$C/out")"
 fi
 
+echo "== C (host compiler)"
+# Each tests/c/*_test.c includes the source it tests; device-only calls are
+# redirected there. c_build compiles once, c_test runs one named case.
+CC_BIN=${CC:-cc}
+c_build() {
+  bin="$W/$1"; shift
+  if ! have "$CC_BIN"; then return 1; fi
+  if ! out=$("$CC_BIN" -std=gnu2x -D_GNU_SOURCE -w -I"$R/tests/c/include" -I"$R/zygiskd/src" -I"$R/zygiskd/src/root_impl" \
+       -I"$R/loader/src/include" -o "$bin" "$@" -lpthread 2>&1); then
+    printf '%s\n' "$out" > "$bin.err"
+  fi
+  return 0
+}
+# c_test <binary> <case> <description>
+c_test() {
+  if ! have "$CC_BIN"; then
+    CC_SKIPPED=$((CC_SKIPPED + 1)); skip "$3" "no C compiler $CC_BIN"; return
+  fi
+  if [ ! -x "$W/$1" ]; then bad "$3" "compile failed: $(head -n 20 "$W/$1.err" 2>/dev/null)"; return; fi
+  if out=$(cd "$W" && TEST_DIR="$W/$1.d" "$W/$1" "$2" 2>&1); then ok "$3"; else bad "$3" "$(printf '%s\n' "$out" | tail -n 5)"; fi
+}
+
+c_build zygiskd_utils "$R/tests/c/zygiskd_utils_test.c"
+c_test zygiskd_utils read_string_value "zygiskd read_string: reads a string"
+c_test zygiskd_utils read_string_empty "zygiskd read_string: empty string is NUL-terminated"
+
 echo "passed $PASSED failed $FAILED skipped $SKIPPED"
 if [ "$FAILED" -ne 0 ]; then exit 1; fi
 if [ "${REZYGISK_REQUIRE_CC:-}" = 1 ] && [ "$CC_SKIPPED" -ne 0 ]; then

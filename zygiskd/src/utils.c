@@ -347,7 +347,7 @@ ssize_t read_string(int fd, char *restrict buf, size_t buf_size) {
     return -1;
   }
 
-  if (str_len > 0) buf[str_len] = '\0';
+  buf[str_len] = '\0';
 
   return read_bytes;
 }
