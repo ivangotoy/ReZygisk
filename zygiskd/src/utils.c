@@ -434,14 +434,47 @@ bool exec_command(char *restrict buf, size_t len, const char *restrict file, con
   } else {
     close(link[1]);
 
-    ssize_t nbytes = read(link[0], buf, len);
+    /* INFO: One deadline for the whole command: its output and its exit */
+    int64_t deadline = monotonic_ms() + ZYGISKD_PEER_TIMEOUT_MS;
+    bool timed_out = false;
+
+    size_t nbytes = 0;
+    while (nbytes < len) {
+      int64_t left = deadline - monotonic_ms();
+      struct pollfd pfd = { .fd = link[0], .events = POLLIN, .revents = 0 };
+      int ready = left > 0 ? poll(&pfd, 1, (int)left) : 0;
+      if (ready == -1 && errno == EINTR) continue;
+      if (ready == 0) {
+        timed_out = true;
+
+        break;
+      }
+      if (ready == -1) break;
+
+      ssize_t ret = read(link[0], buf + nbytes, len - nbytes);
+      if (ret == -1 && errno == EINTR) continue;
+      if (ret <= 0) break;
+
+      nbytes += (size_t)ret;
+    }
+
     if (nbytes > 0) buf[nbytes - 1] = '\0';
     /* INFO: If something went wrong, at least we must ensure it is NULL-terminated */
     else buf[0] = '\0';
 
-    wait(NULL);
-
+    /* INFO: Closed before reaping: a child with more output than fits must not block on it */
     close(link[0]);
+
+    if (timed_out) {
+      LOGE("%s did not answer in time", file);
+
+      kill(pid, SIGKILL);
+      wait_child_until(pid, NULL, monotonic_ms());
+
+      return false;
+    }
+
+    if (!wait_child_until(pid, NULL, deadline) && monotonic_ms() >= deadline) return false;
   }
 
   return true;

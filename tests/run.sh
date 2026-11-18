@@ -437,6 +437,10 @@ c_test zygiskd_utils mounted_ns_logs_no_error "zygiskd save_mns_fd: success logs
 
 # helpers with a 200 ms ZYGISKD_PEER_TIMEOUT_MS
 c_build zygiskd_utils_timeout "$R/tests/c/zygiskd_utils_test.c" -DZYGISKD_PEER_TIMEOUT_MS=200
+c_test zygiskd_utils_timeout exec_output "zygiskd exec_command: returns the output"
+c_test zygiskd_utils_timeout exec_split_output "zygiskd exec_command: output written in parts is read whole"
+c_test zygiskd_utils_timeout exec_child_hangs "zygiskd exec_command: a hanging command is killed and fails after the time limit"
+c_test zygiskd_utils_timeout exec_child_hangs_after_closing "zygiskd exec_command: a command hanging after closing its output is killed too"
 c_test zygiskd_utils_timeout clean_ns_helper_hangs "zygiskd save_mns_fd: a namespace helper stuck in umount is killed and fails in time"
 
 c_build zygiskd_common "$R/tests/c/zygiskd_common_test.c"
