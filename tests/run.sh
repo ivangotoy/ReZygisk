@@ -413,6 +413,9 @@ c_build zygiskd_common "$R/tests/c/zygiskd_common_test.c"
 c_test zygiskd_common uid_from_pkg_found "zygiskd uid_from_pkg: installed package gives its app id"
 c_test zygiskd_common uid_from_pkg_missing "zygiskd uid_from_pkg: missing package gives 0"
 
+c_build zygiskd_daemon "$R/tests/c/zygiskd_daemon_test.c" "$R/zygiskd/src/utils.c"
+c_test zygiskd_daemon survives_empty_client "zygiskd: a client leaving without a request does not stop the daemon"
+
 echo "passed $PASSED failed $FAILED skipped $SKIPPED"
 if [ "$FAILED" -ne 0 ]; then exit 1; fi
 if [ "${REZYGISK_REQUIRE_CC:-}" = 1 ] && [ "$CC_SKIPPED" -ne 0 ]; then

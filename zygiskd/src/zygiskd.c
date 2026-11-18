@@ -382,13 +382,13 @@ void zygiskd_start(char *restrict argv[]) {
 
       close(client_fd);
 
-      break;
+      continue;
     } else if (len == 0) {
       LOGI("Client disconnected");
 
       close(client_fd);
 
-      break;
+      continue;
     }
 
     enum DaemonSocketAction action = (enum DaemonSocketAction)action8;
