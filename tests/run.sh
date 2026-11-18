@@ -442,6 +442,7 @@ c_test monitor listener_bind_fail_closes "monitor: failed bind closes the socket
 c_test monitor sections_bounded "monitor: oversized module.prop stays inside the section buffers"
 c_test monitor prop_rewrite_exact "monitor: status rewrite changes only the description, keeps updateJson and mode"
 c_test monitor prop_write_failure_keeps_old "monitor: failed module.prop write leaves the old file intact"
+c_test monitor status_text_bounded "monitor: long daemon error text stays inside the status text"
 
 c_build ptracer_main "$R/tests/c/ptracer_main_test.c"
 c_test ptracer_main trace_valid_pid "zygisk-ptrace trace: a valid pid is traced"

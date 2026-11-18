@@ -22,6 +22,7 @@
 #define STOPPED_WITH(sig, event) (WIFSTOPPED(sigchld_status) && (sigchld_status >> 8 == ((sig) | ((event) << 8))))
 
 static bool update_status(const char *message);
+static void append_truncated(char *section, size_t size, const char *text);
 
 const char *monitor_stop_reason = NULL;
 
@@ -832,20 +833,20 @@ static char post_section[1024];
 
 #define WRITE_STATUS_ABI(suffix)                                                     \
   if (status ## suffix.supported) {                                                  \
-    strcat(status_text, ", ReZygisk " # suffix "-bit: ");                            \
+    append_truncated(status_text, sizeof(status_text), ", ReZygisk " # suffix "-bit: "); \
                                                                                      \
-    if (tracing_state != TRACING) strcat(status_text, "❌");                         \
+    if (tracing_state != TRACING) append_truncated(status_text, sizeof(status_text), "❌"); \
     else if (status ## suffix.zygote_injected && status ## suffix.daemon_running)    \
-      strcat(status_text, "✅");                                                     \
-    else strcat(status_text, "⚠️");                                                  \
+      append_truncated(status_text, sizeof(status_text), "✅"); \
+    else append_truncated(status_text, sizeof(status_text), "⚠️"); \
                                                                                      \
     if (!status ## suffix.daemon_running) {                                          \
       if (status ## suffix.daemon_error_info) {                                      \
-        strcat(status_text, "(ReZygiskd: ");                                         \
-        strcat(status_text, status ## suffix.daemon_error_info);                     \
-        strcat(status_text, ")");                                                    \
+        append_truncated(status_text, sizeof(status_text), "(ReZygiskd: "); \
+        append_truncated(status_text, sizeof(status_text), status ## suffix.daemon_error_info); \
+        append_truncated(status_text, sizeof(status_text), ")"); \
       } else {                                                                       \
-        strcat(status_text, "(ReZygiskd: not running)");                             \
+        append_truncated(status_text, sizeof(status_text), "(ReZygiskd: not running)"); \
       }                                                                              \
     }                                                                                \
   }

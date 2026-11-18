@@ -341,6 +341,52 @@ static int test_prop_write_failure_keeps_old(void) {
   return 1;
 }
 
+/* a long daemon error text must not overflow the 256-byte status text */
+static int test_status_text_bounded(void) {
+  if (write_prop(PROP_FIXTURE) == -1) return 2;
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    if (!prepare_environment()) _exit(2);
+
+    static char error_info[401];
+    memset(error_info, 'e', 400);
+    status64.supported = true;
+    status64.daemon_running = false;
+    status64.daemon_error_info = error_info;
+
+    update_status(NULL);
+
+    _exit(0);
+  }
+
+  int status = 0;
+  waitpid(pid, &status, 0);
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+    printf("child status 0x%x\n", status);
+
+    return 1;
+  }
+
+  char got[4096];
+  if (read_file(prop_path, got, sizeof(got)) == -1) return 2;
+
+  const char *start = strstr(got, "description=[");
+  const char *end = start ? strstr(start, "] Standalone") : NULL;
+  if (start == NULL || end == NULL) {
+    printf("module.prop:\n%s\n", got);
+
+    return 1;
+  }
+
+  size_t len = (size_t)(end - (start + strlen("description=[")));
+  if (len <= 255) return 0;
+
+  printf("status text is %zu bytes\n", len);
+
+  return 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -351,6 +397,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "sections_bounded") == 0) return test_sections_bounded();
   if (strcmp(argv[1], "prop_rewrite_exact") == 0) return test_prop_rewrite_exact();
   if (strcmp(argv[1], "prop_write_failure_keeps_old") == 0) return test_prop_write_failure_keeps_old();
+  if (strcmp(argv[1], "status_text_bounded") == 0) return test_status_text_bounded();
   if (strcmp(argv[1], "listener_bind_fail_closes") == 0) return test_listener_bind_fail_closes();
 
   return 2;
