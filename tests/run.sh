@@ -508,6 +508,11 @@ c_build ptracer_trace "$R/tests/c/ptracer_trace_test.c"
 c_test ptracer_trace sigcont_detaches "zygisk-ptrace trace_zygote: SIGCONT after injection detaches and succeeds"
 c_test ptracer_trace unexpected_stop_fails "zygisk-ptrace trace_zygote: another stop after injection detaches and fails"
 
+c_build remote_csoloader "$R/tests/c/remote_csoloader_test.c" "$R/loader/src/common/socket_utils.c"
+c_test remote_csoloader short_phdr_read "remote_csoloader: program headers cut by the end of the file are refused"
+c_test remote_csoloader reserve_mmap_errno "remote_csoloader: a remote mmap reserve returning -errno stops the load"
+c_test remote_csoloader segment_mmap_errno "remote_csoloader: a remote segment mmap returning -errno stops the load"
+
 c_build loader_daemon "$R/tests/c/loader_daemon_test.c" "$R/loader/src/common/socket_utils.c"
 c_test loader_daemon get_info_daemon_down "loader rezygiskd_get_info: daemon down leaves an empty, freeable info"
 
