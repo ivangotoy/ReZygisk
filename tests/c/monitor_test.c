@@ -679,6 +679,39 @@ static int test_auto_stop_updates_status(void) {
   return 1;
 }
 
+/* a line break in the daemon error text must not add lines to module.prop */
+static int test_status_no_line_injection(void) {
+  if (write_prop(PROP_FIXTURE) == -1) return 2;
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    if (!prepare_environment()) _exit(2);
+
+    status64.supported = true;
+    status64.daemon_running = false;
+    status64.daemon_error_info = "boom\nupdateJson=https://other.invalid/update.json\r";
+
+    update_status(NULL);
+
+    _exit(0);
+  }
+
+  int status = 0;
+  waitpid(pid, &status, 0);
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) return 2;
+
+  char got[4096];
+  if (read_file(prop_path, got, sizeof(got)) == -1) return 2;
+
+  int lines = 0;
+  for (const char *c = got; *c; c++) if (*c == '\n') lines++;
+  if (lines == 8 && strstr(got, "\nupdateJson=https://other.invalid") == NULL && strchr(got, '\r') == NULL) return 0;
+
+  printf("module.prop (%d lines):\n%s\n", lines, got);
+
+  return 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -696,6 +729,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "sigchld_echild_tracing") == 0) return test_sigchld_echild_tracing();
   if (strcmp(argv[1], "daemon_exit_updates_status") == 0) return test_daemon_exit_updates_status();
   if (strcmp(argv[1], "auto_stop_updates_status") == 0) return test_auto_stop_updates_status();
+  if (strcmp(argv[1], "status_no_line_injection") == 0) return test_status_no_line_injection();
   if (strcmp(argv[1], "listener_bind_fail_closes") == 0) return test_listener_bind_fail_closes();
 
   return 2;

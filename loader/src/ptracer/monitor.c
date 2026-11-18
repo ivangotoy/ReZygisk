@@ -874,7 +874,14 @@ static bool write_module_prop(const char *status) {
   struct stat st;
   if (stat(MODULE_PROP_PATH, &st) == 0) fchmod(fileno(prop), st.st_mode & 07777);
 
-  bool written = fprintf(prop, "%s[%s] %s", pre_section, status, post_section) >= 0;
+  /* INFO: The status must stay on the description line */
+  char status_line[256];
+  snprintf(status_line, sizeof(status_line), "%s", status);
+  for (char *c = status_line; *c; c++) {
+    if (*c == '\n' || *c == '\r') *c = ' ';
+  }
+
+  bool written = fprintf(prop, "%s[%s] %s", pre_section, status_line, post_section) >= 0;
   if (fclose(prop) != 0) written = false;
 
   if (!written || rename(MODULE_PROP_TMP_PATH, MODULE_PROP_PATH) == -1) {

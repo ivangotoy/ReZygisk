@@ -462,6 +462,7 @@ c_test monitor state_json_write_failure_keeps_old "monitor: failed state.json wr
 c_test monitor sigchld_echild_tracing "monitor: SIGCHLD with no child left does not spin on waitpid"
 c_test monitor daemon_exit_updates_status "monitor: ReZygiskd exit is shown in module.prop at once"
 c_test monitor auto_stop_updates_status "monitor: an automatic stop is shown in module.prop once init is released"
+c_test monitor status_no_line_injection "monitor: line breaks in the daemon error text add no module.prop lines"
 
 c_build ptracer_main "$R/tests/c/ptracer_main_test.c"
 c_test ptracer_main trace_valid_pid "zygisk-ptrace trace: a valid pid is traced"
