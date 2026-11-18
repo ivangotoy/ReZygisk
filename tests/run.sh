@@ -467,6 +467,9 @@ c_test zygiskd_daemon_timeout companion_handshake_stalls "zygiskd: a companion t
 
 c_build zygiskd_companion "$R/tests/c/zygiskd_companion_test.c" "$R/zygiskd/src/utils.c"
 c_test zygiskd_companion survives_gone_client "zygiskd companion: a client gone before its ack does not end the companion"
+c_build zygiskd_companion_timeout "$R/tests/c/zygiskd_companion_test.c" "$R/zygiskd/src/utils.c" -DZYGISKD_PEER_TIMEOUT_MS=200
+c_test zygiskd_companion_timeout handshake_never_comes "zygiskd companion: a handshake that never comes ends the companion in time"
+c_test zygiskd_companion_timeout idle_longer_than_limit "zygiskd companion: idling longer than the limit still serves the next client"
 
 c_build zygiskd_rootimpl "$R/tests/c/zygiskd_rootimpl_test.c"
 c_test zygiskd_rootimpl apatch_version "zygiskd APatch: version parsed from apd -V"

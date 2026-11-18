@@ -5,7 +5,9 @@
 
 #include <dlfcn.h>
 #include <signal.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/types.h>
 
 #include <linux/limits.h>
@@ -84,6 +86,16 @@ void *entry_thread(void *arg) {
 void companion_entry(int fd) {
   LOGI("New companion entry.\n - Client fd: %d\n", fd);
 
+  /* INFO: zygiskd sends the handshake right after starting the companion: a
+             stuck zygiskd ends the companion instead of leaving it waiting */
+  struct timeval handshake_timeout = {
+    .tv_sec = ZYGISKD_PEER_TIMEOUT_MS / 1000,
+    .tv_usec = (ZYGISKD_PEER_TIMEOUT_MS % 1000) * 1000
+  };
+  if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &handshake_timeout, sizeof(handshake_timeout)) == -1) {
+    LOGW("Failed to set socket timeout: %s", strerror(errno));
+  }
+
   char name[256 + 1];
   ssize_t ret = read_string(fd, name, sizeof(name));
   if (ret == -1) {
@@ -122,6 +134,10 @@ void companion_entry(int fd) {
 
   struct sigaction sa = { .sa_handler = SIG_IGN };
   sigaction(SIGPIPE, &sa, NULL);
+
+  /* INFO: Waiting for the next client is idle: no time limit */
+  struct timeval no_timeout = { 0 };
+  setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &no_timeout, sizeof(no_timeout));
 
   while (1) {
     if (!check_unix_socket(fd, true)) {

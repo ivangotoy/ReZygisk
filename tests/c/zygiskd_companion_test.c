@@ -93,6 +93,77 @@ static int test_survives_gone_client(void) {
     return result;
 }
 
+#ifndef ZYGISKD_PEER_TIMEOUT_MS
+#define ZYGISKD_PEER_TIMEOUT_MS 10000
+#endif
+
+/* zygiskd never sends the handshake: the companion gives up and exits in time */
+static int test_handshake_never_comes(void) {
+  int sv[2];
+  if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1) return 2;
+
+  pid_t companion = fork();
+  if (companion == -1) return 2;
+  if (companion == 0) {
+    alarm(20);
+    close(sv[0]);
+    companion_entry(sv[1]);
+
+    _exit(0);
+  }
+  close(sv[1]);
+
+  int status = 0;
+  for (int i = 0; i < 300; i++) {
+    if (waitpid(companion, &status, WNOHANG) == companion) return 0;
+    usleep(10000);
+  }
+
+  printf("companion still waiting for its handshake after 3 s\n");
+  kill(companion, SIGKILL);
+  waitpid(companion, NULL, 0);
+  close(sv[0]);
+
+  return 1;
+}
+
+/* after the handshake the companion idles longer than the limit and still
+   serves the next client */
+static int test_idle_longer_than_limit(void) {
+  signal(SIGPIPE, SIG_IGN);
+
+  int sv[2];
+  if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1) return 2;
+
+  pid_t companion = fork();
+  if (companion == 0) {
+    alarm(20);
+    close(sv[0]);
+    companion_entry(sv[1]);
+
+    _exit(0);
+  }
+  close(sv[1]);
+
+  int result = 1;
+  int lib = open("/dev/null", O_RDONLY);
+  uint8_t ack = 0;
+  if (write_string(sv[0], "example") == -1 || write_fd(sv[0], lib) == -1 || read(sv[0], &ack, 1) != 1 || ack != 1) goto out;
+
+  usleep((ZYGISKD_PEER_TIMEOUT_MS * 3 + 100) * 1000);
+
+  int peer = -1;
+  ack = 0;
+  if (send_client(sv[0], &peer) == 0 && read(peer, &ack, 1) == 1 && ack == 1) result = 0;
+  else printf("companion did not serve a client after idling\n");
+
+  out:
+    kill(companion, SIGKILL);
+    waitpid(companion, NULL, 0);
+
+    return result;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -100,5 +171,7 @@ int main(int argc, char **argv) {
 
   if (strcmp(argv[1], "survives_gone_client") == 0) return test_survives_gone_client();
 
+  if (strcmp(argv[1], "handshake_never_comes") == 0) return test_handshake_never_comes();
+  if (strcmp(argv[1], "idle_longer_than_limit") == 0) return test_idle_longer_than_limit();
   return 2;
 }
