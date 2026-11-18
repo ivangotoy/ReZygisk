@@ -428,9 +428,17 @@ void hook_jni_methods(JNIEnv *env, const char *clz, JNINativeMethod *methods, in
       continue;
     }
 
+    /* INFO: No room left: report it like a method that cannot be hooked */
+    if (hooks_count >= sizeof(hooks) / sizeof(hooks[0])) {
+      nm->fnPtr = NULL;
+
+      (*env)->DeleteLocalRef(env, method);
+
+      continue;
+    }
+
     void *art_method = amethod_from_reflected_method(env, method);
-    if (hooks_count < 32)
-      hooks[hooks_count++] = *nm;
+    hooks[hooks_count++] = *nm;
 
     void *orig = amethod_get_data((uintptr_t)art_method);
     nm->fnPtr = orig;
