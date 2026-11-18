@@ -370,11 +370,14 @@ void zygiskd_start(char *restrict argv[]) {
   while (1) {
     int client_fd = accept(socket_fd, NULL, NULL);
     if (client_fd == -1) {
-      LOGE("accept: %s", strerror(errno));
+      /* INFO: Logging can change errno */
+      int accept_errno = errno;
+
+      LOGE("accept: %s", strerror(accept_errno));
 
       /* INFO: Transient errors: the listening socket is still usable */
-      if (errno == EINTR || errno == ECONNABORTED || errno == EAGAIN || errno == EWOULDBLOCK ||
-          errno == EMFILE || errno == ENFILE) continue;
+      if (accept_errno == EINTR || accept_errno == ECONNABORTED || accept_errno == EAGAIN || accept_errno == EWOULDBLOCK ||
+          accept_errno == EMFILE || accept_errno == ENFILE) continue;
 
       break;
     }

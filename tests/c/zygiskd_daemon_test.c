@@ -3,6 +3,7 @@
    calls are no-ops, and the root implementation is a stub "Magisk".
    Linked with the real zygiskd/src/utils.c for the wire helpers. */
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <signal.h>
 #include <stdio.h>
@@ -21,6 +22,7 @@
 
 /* accept(): the first call can be made to fail with a chosen errno */
 static int inject_accept_errno = 0;
+static bool break_stdout = false;
 static int t_accept(int fd, struct sockaddr *addr, socklen_t *len);
 #define accept(fd, a, l) t_accept(fd, a, l)
 
@@ -175,6 +177,12 @@ static pid_t start_daemon(void) {
   if (daemon == 0) {
     alarm(20);
 
+    /* stdout open read-only: every log printf fails and sets errno */
+    if (break_stdout) {
+      int ro = open("/dev/null", O_RDONLY);
+      dup2(ro, STDOUT_FILENO);
+    }
+
     char *argv[] = { "zygiskd", NULL };
     zygiskd_start(argv);
 
@@ -224,6 +232,11 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "accept_eintr") == 0) return accept_error(EINTR, true);
   if (strcmp(argv[1], "accept_emfile") == 0) return accept_error(EMFILE, true);
   if (strcmp(argv[1], "accept_einval_exits") == 0) return accept_error(EINVAL, false);
+  if (strcmp(argv[1], "accept_econnaborted_log_fails") == 0) {
+    break_stdout = true;
+
+    return accept_error(ECONNABORTED, true);
+  }
 
   return 2;
 }
