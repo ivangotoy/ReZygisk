@@ -1,0 +1,127 @@
+// Host tests for the WebUI code that builds root shell commands.
+//   node tests/webui/webui_test.mjs <case> <scratch dir>
+// The real webroot/js files are copied into the scratch dir (with a
+// package.json marking them as ES modules) and imported with browser
+// and KernelSU stand-ins: ksu.exec records every command it is given.
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+
+const [, , testCase, scratch] = process.argv
+const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+const web = join(scratch, 'webroot')
+mkdirSync(web, { recursive: true })
+cpSync(join(root, 'webroot', 'js'), join(web, 'js'), { recursive: true })
+cpSync(join(root, 'webroot', 'lang'), join(web, 'lang'), { recursive: true })
+writeFileSync(join(web, 'package.json'), '{"type":"module"}\n')
+
+process.on('unhandledRejection', () => {})
+
+// anything: a value every DOM access works on
+const anything = new Proxy(function () {}, {
+  get: (t, p) => (p === Symbol.toPrimitive ? () => '' : p === 'then' ? undefined : anything),
+  set: () => true,
+  apply: () => anything
+})
+
+const handlers = {}
+const commands = []
+let stateJson = '{}'
+
+globalThis.window = new Proxy({
+  addEventListener: (name, fn) => { (handlers[name] ||= []).push(fn) },
+  onceTrueEvent: () => {}
+}, {
+  get: (t, p) => (p in t ? t[p] : globalThis[p]),
+  set: (t, p, v) => { t[p] = v; globalThis[p] = v; return true }
+})
+globalThis.document = anything
+// browser classes that webroot/js/pages/utils.js extends
+for (const name of ['Window', 'Element', 'HTMLElement', 'NodeList', 'HTMLCollection', 'Document', 'EventTarget']) {
+  globalThis[name] ||= class {}
+}
+globalThis.localStorage = { getItem: () => null, setItem: () => {} }
+globalThis.fetch = async (url) => {
+  const text = readFileSync(join(web, String(url)), 'utf8')
+
+  return { json: async () => JSON.parse(text), text: async () => text }
+}
+globalThis.ksu = {
+  exec: (command, options, callback) => {
+    commands.push(command)
+    const stdout = command.includes('state.json') ? stateJson : ''
+    setTimeout(() => globalThis[callback](0, stdout, ''), 0)
+  },
+  toast: () => {}
+}
+
+const pageLoader = await import(pathToFileURL(join(web, 'js', 'pages', 'pageLoader.js')))
+const settle = () => new Promise((resolve) => setTimeout(resolve, 50))
+
+// sh -c on the command, with the redirect target swapped for a file in the scratch dir
+const { execFileSync } = await import('node:child_process')
+const runShell = (command, out) => execFileSync('sh', ['-c', command.replace('/data/adb/rezygisk/webui_error.log', out)])
+
+function fail(message) {
+  console.log(message)
+  process.exit(1)
+}
+
+async function errorLog(kind, event, wantText) {
+  await settle()
+  commands.length = 0
+  for (const fn of handlers[kind] || []) fn(event)
+  await settle()
+
+  const command = commands.find((c) => c.includes('webui_error.log'))
+  if (!command) fail(`no log command for ${kind}`)
+
+  const out = join(scratch, `${kind}.log`)
+  try {
+    runShell(command, out)
+  } catch (e) {
+    fail(`command failed: ${command}`)
+  }
+  const got = readFileSync(out, 'utf8')
+  if (got !== wantText + '\n') fail(`command: ${command}\nlogged:   ${JSON.stringify(got)}\nexpected: ${JSON.stringify(wantText + '\n')}`)
+}
+
+const nasty = `it's "quoted" $(touch ${scratch}/pwned) \`touch ${scratch}/pwned\` back\\slash\nline two`
+
+switch (testCase) {
+  case 'error_log_literal': {
+    const stack = `Error: ${nasty}\n    at load (js/pages/home/index.js:1:1)`
+    await errorLog('error', { message: nasty, error: { stack } }, `Error: ${nasty}\n\n${stack}`)
+    break
+  }
+  case 'error_log_no_error_object': {
+    await errorLog('error', { message: 'Script error.', error: null }, 'Error: Script error.\n\n')
+    break
+  }
+  case 'rejection_log_literal': {
+    await errorLog('unhandledrejection', { reason: nasty }, `Error (Unhandled Rejection): ${nasty}\n\n`)
+    break
+  }
+  case 'module_ids_validated': {
+    stateJson = JSON.stringify({
+      rezygiskd: { 64: { modules: ['example_module', `bad"; touch ${scratch}/pwned; "`, 'other.module-2'] } }
+    })
+    const modules = await import(pathToFileURL(join(web, 'js', 'pages', 'modules', 'index.js')))
+    commands.length = 0
+    await modules.loadOnceView()
+    await settle()
+
+    const command = commands.find((c) => c.includes('module.prop'))
+    if (!command) fail('no module name command')
+    if (command.includes('pwned') || !command.includes('/data/adb/modules/example_module/module.prop') ||
+        !command.includes('/data/adb/modules/other.module-2/module.prop')) fail(`command: ${command}`)
+    // one name slot per module, in order: each slot ends with printf "\n"
+    const slots = command.split('printf "\\n"').length - 1
+    if (slots !== 3) fail(`${slots} name slots for 3 modules: ${command}`)
+    break
+  }
+  default:
+    process.exit(2)
+}
+
+process.exit(0)

@@ -537,8 +537,28 @@ c_test loader_socket read_string_huge_length "loader read_string: SIZE_MAX lengt
 c_test loader_socket read_uint32_full "loader read_uint32_t: reads a full value"
 c_test loader_socket read_uint32_short "loader read_uint32_t: short answer is a read failure"
 
+echo "== WebUI (node)"
+# tests/webui/webui_test.mjs imports the real webroot/js files with
+# browser and KernelSU stand-ins
+NODE_SKIPPED=0
+node_test() {
+  if ! have node; then
+    NODE_SKIPPED=$((NODE_SKIPPED + 1)); skip "$2" "no node"; return
+  fi
+  d="$W/webui-$1"; mkdir -p "$d"
+  if out=$(node "$R/tests/webui/webui_test.mjs" "$1" "$d" 2>&1); then ok "$2"; else bad "$2" "$(printf '%s\n' "$out" | tail -n 6)"; fi
+}
+node_test error_log_literal "WebUI: error text reaches the log file literally, never as shell code"
+node_test error_log_no_error_object "WebUI: an error event without an error object is logged"
+node_test rejection_log_literal "WebUI: rejection reason reaches the log file literally, never as shell code"
+node_test module_ids_validated "WebUI: module ids outside the module id charset never reach the shell"
+
 echo "passed $PASSED failed $FAILED skipped $SKIPPED"
 if [ "$FAILED" -ne 0 ]; then exit 1; fi
+if [ "${REZYGISK_REQUIRE_NODE:-}" = 1 ] && [ "$NODE_SKIPPED" -ne 0 ]; then
+  echo "REZYGISK_REQUIRE_NODE=1: $NODE_SKIPPED node case(s) skipped"
+  exit 1
+fi
 if [ "${REZYGISK_REQUIRE_CC:-}" = 1 ] && [ "$CC_SKIPPED" -ne 0 ]; then
   echo "REZYGISK_REQUIRE_CC=1: $CC_SKIPPED C case(s) skipped"
   exit 1
