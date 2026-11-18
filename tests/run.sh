@@ -433,6 +433,14 @@ c_test zygiskd_rootimpl magisk_sql_max_quotes "zygiskd Magisk: longest all-quote
 c_build monitor "$R/tests/c/monitor_test.c"
 c_test monitor state_json_stop_reason "monitor: state.json with a stop reason is valid JSON"
 
+c_build ptracer_main "$R/tests/c/ptracer_main_test.c"
+c_test ptracer_main trace_valid_pid "zygisk-ptrace trace: a valid pid is traced"
+c_test ptracer_main trace_non_numeric_pid "zygisk-ptrace trace: non-numeric pid rejected before anything runs"
+c_test ptracer_main trace_trailing_garbage_pid "zygisk-ptrace trace: pid with trailing garbage rejected"
+c_test ptracer_main trace_zero_pid "zygisk-ptrace trace: pid 0 rejected"
+c_test ptracer_main trace_negative_pid "zygisk-ptrace trace: negative pid rejected"
+c_test ptracer_main ctl_without_command "zygisk-ptrace ctl: missing command prints usage and exits 1"
+
 c_build loader_daemon "$R/tests/c/loader_daemon_test.c" "$R/loader/src/common/socket_utils.c"
 c_test loader_daemon get_info_daemon_down "loader rezygiskd_get_info: daemon down leaves an empty, freeable info"
 

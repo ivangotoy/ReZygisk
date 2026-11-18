@@ -1,3 +1,4 @@
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,6 +14,14 @@ int main(int argc, char **argv) {
 
     return 0;
   } else if (argc >= 3 && strcmp(argv[1], "trace") == 0) {
+      char *pid_end = NULL;
+      long pid = strtol(argv[2], &pid_end, 0);
+      if (pid_end == argv[2] || *pid_end != '\0' || pid <= 0 || pid > INT_MAX) {
+        printf("[ReZygisk]: Invalid pid: %s\n", argv[2]);
+
+        return 1;
+      }
+
       bool is_tango = false;
       bool do_restart = false;
 
@@ -25,8 +34,7 @@ int main(int argc, char **argv) {
                  so we just delay for Tango Zygote. */
       if (do_restart && !is_tango) rezygiskd_zygote_restart();
 
-      long pid = strtol(argv[2], 0, 0);
-      if (!trace_zygote(pid, is_tango)) {
+      if (!trace_zygote((int)pid, is_tango)) {
         kill(pid, SIGKILL);
 
         return 1;
@@ -37,6 +45,12 @@ int main(int argc, char **argv) {
       return 0;
   } else if (argc >= 2 && strcmp(argv[1], "ctl") == 0) {
     enum rezygiskd_command command;
+
+    if (argc < 3) {
+      printf("[ReZygisk]: Usage: %s ctl <start|stop|exit>\n", argv[0]);
+
+      return 1;
+    }
 
     if (strcmp(argv[2], "start") == 0) command = START;
     else if (strcmp(argv[2], "stop") == 0) command = STOP;
