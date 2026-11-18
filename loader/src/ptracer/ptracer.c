@@ -216,6 +216,15 @@ bool trace_zygote(int pid, bool tango_flag) {
         WAIT_OR_DIE
 
         ptrace(PTRACE_DETACH, pid, 0, SIGCONT);
+      } else {
+        char status_str[64];
+        parse_status(status, status_str, sizeof(status_str));
+
+        LOGE("Expected SIGCONT, found: %s", status_str);
+
+        ptrace(PTRACE_DETACH, pid, 0, 0);
+
+        return false;
       }
     } else {
       char status_str[64];

@@ -498,6 +498,10 @@ c_test loader_misc maps_parsed "loader parse_maps: entries parsed and freed"
 c_test loader_misc empty_maps_no_leak "loader parse_maps: no mapping found leaves nothing allocated"
 c_test loader_misc last_line_without_newline "loader parse_maps: last line without a newline keeps its path"
 
+c_build ptracer_trace "$R/tests/c/ptracer_trace_test.c"
+c_test ptracer_trace sigcont_detaches "zygisk-ptrace trace_zygote: SIGCONT after injection detaches and succeeds"
+c_test ptracer_trace unexpected_stop_fails "zygisk-ptrace trace_zygote: another stop after injection detaches and fails"
+
 c_build loader_daemon "$R/tests/c/loader_daemon_test.c" "$R/loader/src/common/socket_utils.c"
 c_test loader_daemon get_info_daemon_down "loader rezygiskd_get_info: daemon down leaves an empty, freeable info"
 
