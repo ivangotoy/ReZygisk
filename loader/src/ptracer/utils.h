@@ -7,6 +7,7 @@
 #include <sys/ptrace.h>
 #include <stdint.h>
 #include <sys/wait.h>
+#include <sched.h>
 #include <time.h>
 
 #include "misc.h"
@@ -85,11 +86,19 @@ static inline int64_t trace_monotonic_ms(void) {
   return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
-/* INFO: waitpid() until deadline_ms (trace_monotonic_ms() clock): the first
-           check does not sleep, then the interval grows from 50 us to 5 ms.
+/* INFO: waitpid() until deadline_ms (trace_monotonic_ms() clock). A traced
+           process usually stops within microseconds, so the first 100 checks
+           only yield the CPU; after that the interval grows from 50 us to 5 ms.
            Returns what waitpid() returned, or 0 when the deadline passed
            (nothing else is done: no signal is sent). */
 static inline pid_t waitpid_until(pid_t pid, int *status, int flags, int64_t deadline_ms) {
+  for (int i = 0; i < 100; i++) {
+    pid_t ret = waitpid(pid, status, flags | WNOHANG);
+    if (ret != 0) return ret;
+
+    sched_yield();
+  }
+
   useconds_t interval = 50;
   while (1) {
     pid_t ret = waitpid(pid, status, flags | WNOHANG);
