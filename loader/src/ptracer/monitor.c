@@ -501,6 +501,8 @@ static bool ensure_daemon_created(bool is_64bit) {
       }                                                           \
     }                                                             \
                                                                   \
+    update_status(NULL);                                          \
+                                                                  \
     continue;                                                     \
   }
 
@@ -656,6 +658,8 @@ void sigchld_listener_callback() {
           tracing_state = STOPPED;
 
           LOGI("Stopped tracing init");
+
+          update_status(NULL);
 
           continue;
         }

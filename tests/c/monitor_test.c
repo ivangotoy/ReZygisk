@@ -55,8 +55,18 @@ static pid_t t_waitpid(pid_t pid, int *status, int options);
    and ends the process if it is called over and over */
 static bool echild_mode = false;
 static int waitpid_calls = 0;
+/* when set, the first waitpid() reports this pid as exited with status 1 */
+static pid_t exited_pid = 0;
+static int exited_status = 1 << 8;
 
 static pid_t t_waitpid(pid_t pid, int *status, int options) {
+  if (exited_pid != 0) {
+    pid_t ret = exited_pid;
+    exited_pid = 0;
+    *status = exited_status;
+
+    return ret;
+  }
   if (!echild_mode) return waitpid(pid, status, options);
 
   if (++waitpid_calls > 1000) {
@@ -582,6 +592,93 @@ static int test_sigchld_echild_tracing(void) {
   return 1;
 }
 
+/* ReZygiskd exiting must show up in module.prop right away */
+static int test_daemon_exit_updates_status(void) {
+  if (write_prop(PROP_FIXTURE) == -1) return 2;
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    alarm(10);
+    if (!prepare_environment()) _exit(2);
+    if (!sigchld_listener_init()) _exit(2);
+
+    tracing_state = TRACING;
+    status64.supported = true;
+    status64.daemon_running = true;
+    status64.zygote_injected = true;
+    status64.daemon_pid = 4242;
+
+    exited_pid = 4242;
+    echild_mode = true;
+    kill(getpid(), SIGCHLD);
+
+    sigchld_listener_callback();
+
+    _exit(0);
+  }
+
+  int status = 0;
+  waitpid(pid, &status, 0);
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+    printf("child status 0x%x\n", status);
+
+    return 1;
+  }
+
+  char got[4096];
+  if (read_file(prop_path, got, sizeof(got)) == -1) return 2;
+  if (strstr(got, "description=[Monitor: \u2705, ReZygisk 64-bit: \u26a0\ufe0f(ReZygiskd: test)] Standalone")) return 0;
+
+  printf("module.prop after the daemon exited:\n%s\n", got);
+
+  return 1;
+}
+
+/* an automatic stop (e.g. "Zygote crashed") must show up in module.prop
+   once tracing of init has stopped */
+static int test_auto_stop_updates_status(void) {
+  if (write_prop(PROP_FIXTURE) == -1) return 2;
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    alarm(10);
+    if (!prepare_environment()) _exit(2);
+    if (!sigchld_listener_init()) _exit(2);
+
+    /* state left by the PRE_INJECT auto-stop */
+    tracing_state = STOPPING;
+    monitor_stop_reason = "Zygote crashed";
+    status64.supported = true;
+    status64.daemon_running = true;
+
+    /* init reports the group-stop that PTRACE_INTERRUPT asked for */
+    exited_pid = 1;
+    exited_status = ((SIGTRAP | (PTRACE_EVENT_STOP << 8)) << 8) | 0x7f;
+    echild_mode = true;
+    kill(getpid(), SIGCHLD);
+
+    sigchld_listener_callback();
+
+    _exit(tracing_state == STOPPED ? 0 : 3);
+  }
+
+  int status = 0;
+  waitpid(pid, &status, 0);
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+    printf("child status 0x%x\n", status);
+
+    return 1;
+  }
+
+  char got[4096];
+  if (read_file(prop_path, got, sizeof(got)) == -1) return 2;
+  if (strstr(got, "description=[Monitor: \u26d4, ReZygisk 64-bit: \u274c] Standalone")) return 0;
+
+  printf("module.prop after the stop:\n%s\n", got);
+
+  return 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -597,6 +694,8 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "state_json_escapes") == 0) return test_state_json_escapes();
   if (strcmp(argv[1], "state_json_write_failure_keeps_old") == 0) return test_state_json_write_failure_keeps_old();
   if (strcmp(argv[1], "sigchld_echild_tracing") == 0) return test_sigchld_echild_tracing();
+  if (strcmp(argv[1], "daemon_exit_updates_status") == 0) return test_daemon_exit_updates_status();
+  if (strcmp(argv[1], "auto_stop_updates_status") == 0) return test_auto_stop_updates_status();
   if (strcmp(argv[1], "listener_bind_fail_closes") == 0) return test_listener_bind_fail_closes();
 
   return 2;
