@@ -249,6 +249,9 @@ void rezygiskd_listener_callback() {
           else tracing_state = TRACING;
         }
 
+        /* INFO: Tracing again: the reason of the last stop no longer applies */
+        if (tracing_state == TRACING) monitor_stop_reason = NULL;
+
         update_status(NULL);
 
         break;

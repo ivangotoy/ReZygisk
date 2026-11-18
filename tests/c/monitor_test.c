@@ -814,15 +814,25 @@ static int ctl_start(bool seize_fails) {
   if (send(sv[1], &hdr, sizeof(hdr), 0) != (ssize_t)sizeof(hdr)) return 2;
 
   tracing_state = STOPPED;
+  monitor_stop_reason = "user requested";
   fail_seize = seize_fails;
   rezygiskd_listener_callback();
 
   enum ptracer_tracing_state want = seize_fails ? STOPPED : TRACING;
-  if (seize_calls == 1 && tracing_state == want) return 0;
+  if (seize_calls != 1 || tracing_state != want) {
+    printf("seize calls %d, state %d, expected %d\n", seize_calls, tracing_state, want);
 
-  printf("seize calls %d, state %d, expected %d\n", seize_calls, tracing_state, want);
+    return 1;
+  }
 
-  return 1;
+  /* tracing again: the reason of the last stop no longer applies */
+  if (!seize_fails && monitor_stop_reason != NULL) {
+    printf("stop reason \"%s\" kept while tracing\n", monitor_stop_reason);
+
+    return 1;
+  }
+
+  return 0;
 }
 
 int main(int argc, char **argv) {
