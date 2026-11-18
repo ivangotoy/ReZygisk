@@ -7,6 +7,7 @@
 #include <sys/epoll.h>
 #include <sys/signalfd.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <sys/wait.h>
@@ -766,7 +767,17 @@ void sigchld_listener_callback() {
 
               kill(pid, SIGSTOP);
               ptrace(PTRACE_CONT, pid, 0, 0);
-              waitpid(pid, &sigchld_status, __WALL);
+              if (waitpid_until(pid, &sigchld_status, __WALL, trace_monotonic_ms() + REZYGISK_TRACE_TIMEOUT_MS) == 0) {
+                /* INFO: Still running: SIGCONT drops the pending SIGSTOP, so it cannot
+                           stop later with nobody waiting for it; its next stop is seen
+                           as a new process and continued. Not injected, nothing killed. */
+                LOGE("Process %d did not stop in time, resuming it", pid);
+
+                kill(pid, SIGCONT);
+                sigchld_status = 0;
+
+                break;
+              }
 
               if (!STOPPED_WITH(SIGSTOP, 0)) {
                 LOGE("Failed to stop process %d", pid);

@@ -2,6 +2,7 @@
    module.prop and state.json are redirected to $TEST_DIR; bionic-only
    names used by ptracer/utils.h get host stand-ins. */
 #include <errno.h>
+#include <stdarg.h>
 #include <limits.h>
 #include <signal.h>
 #include <stdio.h>
@@ -47,6 +48,12 @@ static bool fail_seize = false;
 static int seize_calls = 0;
 static long t_ptrace(int request, ...);
 #define ptrace(...) t_ptrace(__VA_ARGS__)
+/* kill: recorded per signal, never sent */
+static int signals_sent[65];
+#define kill(p, sig) ((void)(p), signals_sent[(sig) & 63]++, 0)
+/* sendto: socket paths under /data/adb/rezygisk/ go to rz/ in the cwd */
+static ssize_t t_sendto(int fd, const void *buf, size_t len, int flags, const struct sockaddr *addr, socklen_t alen);
+#define sendto(fd, b, l, f, a, al) t_sendto(fd, b, l, f, a, al)
 /* malloc: the largest request is recorded */
 static size_t max_malloc = 0;
 static void *t_malloc(size_t size);
@@ -62,8 +69,30 @@ static void *t_malloc(size_t size);
 #undef waitpid
 #undef malloc
 #undef ptrace
+#undef kill
+#undef sendto
+
+static bool detach_with_sigstop = false;
+
+static ssize_t t_sendto(int fd, const void *buf, size_t len, int flags, const struct sockaddr *addr, socklen_t alen) {
+  (void)alen;
+  struct sockaddr_un mapped = { .sun_family = AF_UNIX };
+  const char *path = ((const struct sockaddr_un *)addr)->sun_path;
+  snprintf(mapped.sun_path, sizeof(mapped.sun_path), "rz/%s", strrchr(path, '/') + 1);
+
+  return sendto(fd, buf, len, flags, (struct sockaddr *)&mapped, sizeof(mapped));
+}
 
 static long t_ptrace(int request, ...) {
+  if (request == PTRACE_DETACH) {
+    va_list ap;
+    va_start(ap, request);
+    (void)va_arg(ap, pid_t);
+    (void)va_arg(ap, void *);
+    long sig = (long)va_arg(ap, void *);
+    va_end(ap);
+    if (sig == SIGSTOP) detach_with_sigstop = true;
+  }
   if (request == PTRACE_SEIZE) {
     seize_calls++;
     if (fail_seize) {
@@ -90,7 +119,15 @@ static int waitpid_calls = 0;
 static pid_t exited_pid = 0;
 static int exited_status = 1 << 8;
 
+static pid_t hang_pid = 0;
+
 static pid_t t_waitpid(pid_t pid, int *status, int options) {
+  /* the process never reports its stop */
+  if (hang_pid != 0 && pid == hang_pid) {
+    if (options & WNOHANG) return 0;
+
+    for (;;) pause();
+  }
   if (exited_pid != 0) {
     pid_t ret = exited_pid;
     exited_pid = 0;
@@ -165,7 +202,14 @@ static int t_unlink(const char *path) {
 
 int fork_dont_care() { return -1; }
 void parse_status(int status, char *buf, size_t len) { (void)status; snprintf(buf, len, "test"); }
-int get_program(int pid, char *buf, size_t size) { (void)pid; (void)size; buf[0] = '\0'; return -1; }
+static const char *test_program = NULL;
+int get_program(int pid, char *buf, size_t size) {
+  (void)pid;
+  if (test_program == NULL) { buf[0] = '\0'; return -1; }
+  snprintf(buf, size, "%s", test_program);
+
+  return 0;
+}
 
 static char state_path[PATH_MAX];
 static char prop_path[PATH_MAX];
@@ -835,6 +879,103 @@ static int ctl_start(bool seize_fails) {
   return 0;
 }
 
+/* ---- monitor waits with a short REZYGISK_TRACE_TIMEOUT_MS ---- */
+#ifndef REZYGISK_TRACE_TIMEOUT_MS
+#define REZYGISK_TRACE_TIMEOUT_MS 10000
+#endif
+
+static double mon_now(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+
+  return ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+/* app_process execs, the monitor sends SIGSTOP and the process never
+   reports the stop: the monitor resumes it (SIGCONT), kills nothing,
+   starts no tracer and does not detach it with a pending SIGSTOP */
+static int test_stop_wait_times_out(void) {
+  if (write_prop(PROP_FIXTURE) == -1) return 2;
+
+  pid_t child = fork();
+  if (child == 0) {
+    alarm(5);
+    if (!prepare_environment()) _exit(2);
+    if (!sigchld_listener_init()) _exit(2);
+
+    tracing_state = TRACING;
+    status64.supported = true;
+    status64.daemon_running = true;
+    status64.daemon_pid = 4242;
+    test_program = "/system/bin/app_process64";
+
+    sigchld_process = malloc(sizeof(pid_t));
+    sigchld_process[0] = 5555;
+    sigchld_process_count = 1;
+
+    exited_pid = 5555;
+    exited_status = ((SIGTRAP | (PTRACE_EVENT_EXEC << 8)) << 8) | 0x7f;
+    hang_pid = 5555;
+    echild_mode = true;
+    kill(getpid(), SIGCHLD);
+
+    double start = mon_now();
+    sigchld_listener_callback();
+    double took = mon_now() - start;
+
+    if (took > 2.5 * REZYGISK_TRACE_TIMEOUT_MS / 1000.0) { printf("took %.2f s\n", took); _exit(1); }
+    if (signals_sent[SIGKILL]) { printf("SIGKILL sent\n"); _exit(1); }
+    if (!signals_sent[SIGSTOP] || !signals_sent[SIGCONT]) { printf("SIGSTOP %d, SIGCONT %d\n", signals_sent[SIGSTOP], signals_sent[SIGCONT]); _exit(1); }
+    if (detach_with_sigstop) { printf("detached with SIGSTOP\n"); _exit(1); }
+
+    _exit(0);
+  }
+
+  int status = 0;
+  waitpid(child, &status, 0);
+  if (WIFEXITED(status) && WEXITSTATUS(status) == 0) return 0;
+
+  printf("child status 0x%x\n", status);
+
+  return 1;
+}
+
+/* zygisk-ptrace ctl with the monitor's queue full: fails in time */
+static int test_ctl_queue_full(void) {
+  alarm(5);
+  const char *dir = getenv("TEST_DIR");
+  if (dir == NULL) return 2;
+  mkdir(dir, 0700);
+  if (chdir(dir) == -1) return 2;
+  mkdir("rz", 0700);
+  unlink("rz/" SOCKET_NAME);
+
+  int rx = socket(AF_UNIX, SOCK_DGRAM, 0);
+  struct sockaddr_un a = { .sun_family = AF_UNIX };
+  snprintf(a.sun_path, sizeof(a.sun_path), "rz/" SOCKET_NAME);
+  if (bind(rx, (struct sockaddr *)&a, sizeof(a)) == -1) return 2;
+
+  /* fill the receiver's queue: new senders until a fresh one cannot send */
+  char byte = 0;
+  for (int n = 0; n < 64; n++) {
+    int tx = socket(AF_UNIX, SOCK_DGRAM | SOCK_NONBLOCK, 0);
+    int sent = 0;
+    while (sendto(tx, &byte, 1, 0, (struct sockaddr *)&a, sizeof(a)) == 1) sent++;
+    if (errno != EAGAIN) return 2;
+    if (sent == 0) break;
+  }
+
+  double start = mon_now();
+  int ret = send_control_command(START);
+  double took = mon_now() - start;
+
+  if (ret == -1 && took < 2.5 * REZYGISK_TRACE_TIMEOUT_MS / 1000.0) return 0;
+
+  printf("send_control_command %d after %.2f s\n", ret, took);
+
+  return 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -859,5 +1000,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "ctl_start_seize_fails") == 0) return ctl_start(true);
   if (strcmp(argv[1], "listener_bind_fail_closes") == 0) return test_listener_bind_fail_closes();
 
+  if (strcmp(argv[1], "stop_wait_times_out") == 0) return test_stop_wait_times_out();
+  if (strcmp(argv[1], "ctl_queue_full") == 0) return test_ctl_queue_full();
   return 2;
 }
