@@ -103,6 +103,12 @@ uint32_t rezygiskd_get_process_flags(uid_t uid, const char *const process) {
 }
 
 void rezygiskd_get_info(struct rezygisk_info *info) {
+  /* INFO: Every early return below leaves these as they are */
+  info->modules.modules = NULL;
+  info->modules.modules_count = 0;
+  info->root_impl = ROOT_IMPL_NONE;
+  info->pid = 0;
+
   int fd = rezygiskd_connect(1);
   if (fd == -1) {
     info->running = false;
