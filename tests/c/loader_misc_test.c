@@ -85,6 +85,20 @@ static int test_maps_parsed(void) {
   return live_blocks == 0 ? 0 : 1;
 }
 
+/* last line without a trailing newline keeps its whole path */
+static int test_last_line_without_newline(void) {
+  if (write_maps("7f0000000000-7f0000001000 r-xp 00000000 fd:01 1234 /system/lib64/libexample.so") == -1) return 2;
+
+  struct maps_info *info = parse_maps("1234");
+  if (info == NULL || info->length != 1) return 1;
+
+  int ok = strcmp(info->maps[0].path, "/system/lib64/libexample.so") == 0;
+  if (!ok) printf("path: \"%s\"\n", info->maps[0].path);
+  free_maps(info);
+
+  return ok ? 0 : 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -92,6 +106,7 @@ int main(int argc, char **argv) {
 
   if (strcmp(argv[1], "maps_parsed") == 0) return test_maps_parsed();
   if (strcmp(argv[1], "empty_maps_no_leak") == 0) return test_empty_maps_no_leak();
+  if (strcmp(argv[1], "last_line_without_newline") == 0) return test_last_line_without_newline();
 
   return 2;
 }

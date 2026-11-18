@@ -493,6 +493,7 @@ c_test ptracer_utils second_fork_fails "zygisk-ptrace fork_dont_care: failed sec
 c_build loader_misc "$R/tests/c/loader_misc_test.c"
 c_test loader_misc maps_parsed "loader parse_maps: entries parsed and freed"
 c_test loader_misc empty_maps_no_leak "loader parse_maps: no mapping found leaves nothing allocated"
+c_test loader_misc last_line_without_newline "loader parse_maps: last line without a newline keeps its path"
 
 c_build loader_daemon "$R/tests/c/loader_daemon_test.c" "$R/loader/src/common/socket_utils.c"
 c_test loader_daemon get_info_daemon_down "loader rezygiskd_get_info: daemon down leaves an empty, freeable info"

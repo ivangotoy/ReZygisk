@@ -1100,7 +1100,8 @@ static bool prepare_environment() {
     }
 
     /* INFO: A description longer than line arrives in several reads */
-    if (in_description && line[strlen(line) - 1] == '\n') {
+    size_t line_len = strlen(line);
+    if (in_description && line_len > 0 && line[line_len - 1] == '\n') {
       in_description = false;
       after_description = true;
       description_newline = true;
