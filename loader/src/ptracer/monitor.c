@@ -245,9 +245,8 @@ void rezygiskd_listener_callback() {
         } else if (tracing_state == STOPPED) {
           LOGI("Start tracing init");
 
-          ptrace(PTRACE_SEIZE, 1, 0, PTRACE_O_TRACEFORK);
-
-          tracing_state = TRACING;
+          if (ptrace(PTRACE_SEIZE, 1, 0, PTRACE_O_TRACEFORK) == -1) PLOGE("seize init");
+          else tracing_state = TRACING;
         }
 
         update_status(NULL);

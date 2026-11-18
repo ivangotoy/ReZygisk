@@ -11,6 +11,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include <sys/ptrace.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -41,6 +42,11 @@ static int t_stat(const char *path, struct stat *st);
 #define stat(p, s) t_stat(p, s)
 static pid_t t_waitpid(pid_t pid, int *status, int options);
 #define waitpid(p, s, o) t_waitpid(p, s, o)
+/* ptrace: never touches a real process; PTRACE_SEIZE can be made to fail */
+static bool fail_seize = false;
+static int seize_calls = 0;
+static long t_ptrace(int request, ...);
+#define ptrace(...) t_ptrace(__VA_ARGS__)
 /* malloc: the largest request is recorded */
 static size_t max_malloc = 0;
 static void *t_malloc(size_t size);
@@ -55,6 +61,20 @@ static void *t_malloc(size_t size);
 #undef stat
 #undef waitpid
 #undef malloc
+#undef ptrace
+
+static long t_ptrace(int request, ...) {
+  if (request == PTRACE_SEIZE) {
+    seize_calls++;
+    if (fail_seize) {
+      errno = EPERM;
+
+      return -1;
+    }
+  }
+
+  return 0;
+}
 
 static void *t_malloc(size_t size) {
   if (size > max_malloc) max_malloc = size;
@@ -781,6 +801,30 @@ static int test_info_module_count_bounded(void) {
   return 1;
 }
 
+/* ctl start from STOPPED: tracing is on only if init was seized */
+static int ctl_start(bool seize_fails) {
+  if (write_prop(PROP_FIXTURE) == -1) return 2;
+  if (!prepare_environment()) return 2;
+
+  int sv[2];
+  if (socketpair(AF_UNIX, SOCK_DGRAM | SOCK_NONBLOCK, 0, sv) == -1) return 2;
+  monitor_sock_fd = sv[0];
+
+  struct rzd_msg_header hdr = { .cmd = START, .len = 0 };
+  if (send(sv[1], &hdr, sizeof(hdr), 0) != (ssize_t)sizeof(hdr)) return 2;
+
+  tracing_state = STOPPED;
+  fail_seize = seize_fails;
+  rezygiskd_listener_callback();
+
+  enum ptracer_tracing_state want = seize_fails ? STOPPED : TRACING;
+  if (seize_calls == 1 && tracing_state == want) return 0;
+
+  printf("seize calls %d, state %d, expected %d\n", seize_calls, tracing_state, want);
+
+  return 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -801,6 +845,8 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "auto_stop_updates_status") == 0) return test_auto_stop_updates_status();
   if (strcmp(argv[1], "status_no_line_injection") == 0) return test_status_no_line_injection();
   if (strcmp(argv[1], "info_module_count_bounded") == 0) return test_info_module_count_bounded();
+  if (strcmp(argv[1], "ctl_start_seizes") == 0) return ctl_start(false);
+  if (strcmp(argv[1], "ctl_start_seize_fails") == 0) return ctl_start(true);
   if (strcmp(argv[1], "listener_bind_fail_closes") == 0) return test_listener_bind_fail_closes();
 
   return 2;

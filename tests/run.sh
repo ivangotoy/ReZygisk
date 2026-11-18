@@ -477,6 +477,8 @@ c_test monitor daemon_exit_updates_status "monitor: ReZygiskd exit is shown in m
 c_test monitor auto_stop_updates_status "monitor: an automatic stop is shown in module.prop once init is released"
 c_test monitor status_no_line_injection "monitor: line breaks in the daemon error text add no module.prop lines"
 c_test monitor info_module_count_bounded "monitor: module count larger than the datagram allocates nothing for it"
+c_test monitor ctl_start_seizes "monitor: ctl start seizes init and traces"
+c_test monitor ctl_start_seize_fails "monitor: ctl start stays stopped when init cannot be seized"
 
 c_build ptracer_main "$R/tests/c/ptracer_main_test.c"
 c_test ptracer_main trace_valid_pid "zygisk-ptrace trace: a valid pid is traced"
