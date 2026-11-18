@@ -387,6 +387,55 @@ static int test_status_text_bounded(void) {
   return 1;
 }
 
+/* lines after the description that fill post_section exactly: the
+   description newline still fits and no kept line is cut */
+static int test_sections_exact_fit(void) {
+  char content[4096], pad[977];
+  const char *update = "updateJson=https://example.invalid/update.json\n";
+  size_t pad_len = 1023 - strlen(update) - strlen("pad=") - 1;
+  memset(pad, 'x', pad_len); pad[pad_len] = '\0';
+  snprintf(content, sizeof(content), "id=rezygisk\ndescription=Standalone implementation of Zygisk.\n%spad=%s\n", update, pad);
+  if (strlen(content) - strlen("id=rezygisk\ndescription=Standalone implementation of Zygisk.\n") != 1023) return 2;
+  if (write_prop(content) == -1) return 2;
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    if (!prepare_environment()) _exit(2);
+
+    size_t post = strlen(post_section);
+    if (post >= sizeof(post_section) || post == 0 || post_section[post - 1] != '\n') {
+      printf("post_section (%zu bytes) ends: %s\n", post, post > 40 ? post_section + post - 40 : post_section);
+
+      _exit(1);
+    }
+
+    /* every line after the description is a whole line of the file */
+    const char *rest = strchr(post_section, '\n') + 1;
+    while (*rest) {
+      const char *nl = strchr(rest, '\n');
+      size_t len = (size_t)(nl - rest) + 1;
+      if (len != strlen(update) || strncmp(rest, update, len) != 0) {
+        if (!(strncmp(rest, "pad=", 4) == 0 && len == 4 + pad_len + 1)) {
+          printf("cut line: %.40s\n", rest);
+
+          _exit(1);
+        }
+      }
+      rest = nl + 1;
+    }
+
+    _exit(strstr(post_section, update) ? 0 : 4);
+  }
+
+  int status = 0;
+  waitpid(pid, &status, 0);
+  if (WIFEXITED(status) && WEXITSTATUS(status) == 0) return 0;
+
+  printf("child status 0x%x\n", status);
+
+  return 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -395,6 +444,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "state_json_stop_reason") == 0) return test_state_json_stop_reason();
   if (strcmp(argv[1], "listener_stale_path") == 0) return test_listener_stale_path();
   if (strcmp(argv[1], "sections_bounded") == 0) return test_sections_bounded();
+  if (strcmp(argv[1], "sections_exact_fit") == 0) return test_sections_exact_fit();
   if (strcmp(argv[1], "prop_rewrite_exact") == 0) return test_prop_rewrite_exact();
   if (strcmp(argv[1], "prop_write_failure_keeps_old") == 0) return test_prop_write_failure_keeps_old();
   if (strcmp(argv[1], "status_text_bounded") == 0) return test_status_text_bounded();

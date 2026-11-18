@@ -453,6 +453,7 @@ c_test monitor state_json_stop_reason "monitor: state.json with a stop reason is
 c_test monitor listener_stale_path "monitor: stale init_monitor socket path does not block the bind"
 c_test monitor listener_bind_fail_closes "monitor: failed bind closes the socket"
 c_test monitor sections_bounded "monitor: oversized module.prop stays inside the section buffers"
+c_test monitor sections_exact_fit "monitor: lines after the description filling the buffer are never cut"
 c_test monitor prop_rewrite_exact "monitor: status rewrite changes only the description, keeps updateJson and mode"
 c_test monitor prop_write_failure_keeps_old "monitor: failed module.prop write leaves the old file intact"
 c_test monitor status_text_bounded "monitor: long daemon error text stays inside the status text"

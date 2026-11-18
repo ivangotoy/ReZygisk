@@ -1040,7 +1040,8 @@ static bool prepare_environment() {
     } else if (in_description) {
       append_truncated(description, sizeof(description), line);
     } else if (after_description) {
-      append_section(after, sizeof(after), line);
+      /* INFO: One byte stays free for the description's newline */
+      append_section(after, sizeof(after) - 1, line);
     } else {
       append_section(pre_section, sizeof(pre_section), line);
     }
