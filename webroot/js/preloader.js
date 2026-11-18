@@ -59,7 +59,9 @@ document.addEventListener('click', async (event) => {
   const getLink = event.target.getAttribute('credit-link')
   if (!getLink || typeof getLink !== 'string') return;
 
-  const ptrace64Cmd = await exec(`am start -a android.intent.action.VIEW -d https://${getLink}`).catch(() => {
+  /* INFO: One single-quoted shell word: each ' becomes '\'' */
+  const url = `'https://${getLink.replace(/'/g, `'\\''`)}'`
+  const ptrace64Cmd = await exec(`am start -a android.intent.action.VIEW -d ${url}`).catch(() => {
     return window.open(`https://${getLink}`, "_blank", 'toolbar=0,location=0,menubar=0')
   })
 
