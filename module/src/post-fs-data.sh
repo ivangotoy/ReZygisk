@@ -10,6 +10,12 @@ fi
 cd "$MODDIR"
 
 if [ "$(which magisk)" ]; then
+  # INFO: A module script still running after the limit is left running in the
+  #         background (never killed) and the next one starts. The watchdog's
+  #         USR1 only ends the wait, so the trap stays set for good.
+  limit=${REZYGISK_TEST_SCRIPT_LIMIT:-10}
+  trap : USR1
+
   for file in ../*; do
     if [ -d "$file" ] && [ -d "$file/zygisk" ] && ! [ -f "$file/disable" ]; then
       if [ -f "$file/post-fs-data.sh" ]; then
@@ -19,7 +25,17 @@ if [ "$(which magisk)" ]; then
         # INFO: Don't propagate errexit
         set +e
 
-        sh "$(realpath ./post-fs-data.sh)"
+        sh "$(realpath ./post-fs-data.sh)" &
+        script_pid=$!
+        ( sleep "$limit" && kill -USR1 $$ ) &
+        watchdog_pid=$!
+
+        wait "$script_pid"
+        if kill -0 "$script_pid" 2>/dev/null; then
+          log -p w -t "zygisk-sh" "post-fs-data.sh of $file still running after ${limit}s, continuing without it"
+        fi
+
+        kill "$watchdog_pid" 2>/dev/null
 
         # INFO: Re-enable errexit
         set -e

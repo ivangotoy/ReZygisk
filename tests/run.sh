@@ -182,6 +182,21 @@ expect_eq "post-fs-data: Magisk exit code" 0 "$?"
 check "post-fs-data: Magisk runs post-fs-data.sh of enabled zygisk modules" test -s "$C/enabled.ran"
 check "post-fs-data: Magisk skips disabled and non-zygisk modules" test ! -e "$C/disabled.ran" -a ! -e "$C/nozygisk.ran"
 
+# a module script still running at the limit is left running in the
+# background and the next module and the monitor are not held up
+pfd_case pfdslow
+for m in aslow bfast; do mkdir -p "$C/modules/$m/zygisk"; done
+printf '#!/bin/sh\nsleep 3\necho ran > "%s/aslow.ran"\n' "$C" > "$C/modules/aslow/post-fs-data.sh"
+printf '#!/bin/sh\necho ran > "%s/bfast.ran"\n' "$C" > "$C/modules/bfast/post-fs-data.sh"
+run_pfd TEST_MAGISK=1 TEST_ABILIST=arm64-v8a REZYGISK_TEST_SCRIPT_LIMIT=1
+expect_eq "post-fs-data: slow module script exit code" 0 "$?"
+check "post-fs-data: a slow module script does not hold up the next module" test -s "$C/bfast.ran"
+check "post-fs-data: a slow module script is left running, not waited for" test ! -e "$C/aslow.ran"
+wait_file "$C/launched"
+check "post-fs-data: the monitor starts while a slow module script runs" test -s "$C/launched"
+n=0; while [ ! -s "$C/aslow.ran" ] && [ "$n" -lt 50 ]; do sleep 0.1 2>/dev/null || sleep 1; n=$((n + 1)); done
+check "post-fs-data: the slow module script is never killed and completes" test -s "$C/aslow.ran"
+
 echo "== service.sh"
 svc_case() {
   new_case "$1"
