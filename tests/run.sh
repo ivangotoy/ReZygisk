@@ -442,6 +442,7 @@ c_test zygiskd_utils_timeout exec_split_output "zygiskd exec_command: output wri
 c_test zygiskd_utils_timeout exec_child_hangs "zygiskd exec_command: a hanging command is killed and fails after the time limit"
 c_test zygiskd_utils_timeout exec_child_hangs_after_closing "zygiskd exec_command: a command hanging after closing its output is killed too"
 c_test zygiskd_utils_timeout clean_ns_helper_hangs "zygiskd save_mns_fd: a namespace helper stuck in umount is killed and fails in time"
+c_test zygiskd_utils_timeout datagram_queue_full "zygiskd: a full monitor queue does not block sending it a datagram"
 
 c_build zygiskd_common "$R/tests/c/zygiskd_common_test.c"
 c_test zygiskd_common uid_from_pkg_found "zygiskd uid_from_pkg: installed package gives its app id"

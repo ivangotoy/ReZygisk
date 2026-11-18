@@ -10,6 +10,7 @@
 #include <sched.h>
 #include <sys/mount.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -337,6 +338,40 @@ static int test_clean_ns_helper_hangs(void) {
   return child_gone(recorded_pid("helper.pid")) ? 0 : 1;
 }
 
+/* the monitor's datagram queue is full: unix_datagram_sendto gives up in
+   time through its error path */
+static int test_datagram_queue_full(void) {
+  alarm(5);
+  if (write_fixture("attr_current", 'a', 8, attr_current_path) == -1) return 2;
+  if (chdir(getenv("TEST_DIR")) == -1) return 2;
+  unlink("mon.sock");
+
+  int rx = socket(AF_UNIX, SOCK_DGRAM, 0);
+  struct sockaddr_un a = { .sun_family = AF_UNIX };
+  snprintf(a.sun_path, sizeof(a.sun_path), "mon.sock");
+  if (bind(rx, (struct sockaddr *)&a, sizeof(a)) == -1) return 2;
+
+  /* new senders until a fresh one cannot queue anything */
+  char byte = 0;
+  for (int n = 0; n < 64; n++) {
+    int tx = socket(AF_UNIX, SOCK_DGRAM | SOCK_NONBLOCK, 0);
+    int sent = 0;
+    while (sendto(tx, &byte, 1, 0, (struct sockaddr *)&a, sizeof(a)) == 1) sent++;
+    if (errno != EAGAIN) return 2;
+    if (sent == 0) break;
+  }
+
+  double start = now_s();
+  unix_datagram_sendto("mon.sock", "x", 1);
+  double took = now_s() - start;
+
+  if (took < 2.5 * ZYGISKD_PEER_TIMEOUT_MS / 1000.0) return 0;
+
+  printf("took %.2f s\n", took);
+
+  return 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -348,6 +383,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "sockcreate_no_leak") == 0) return test_sockcreate_no_leak();
   if (strcmp(argv[1], "clean_ns_unshare_fails") == 0) return test_clean_ns_unshare_fails();
   if (strcmp(argv[1], "clean_ns_helper_hangs") == 0) return test_clean_ns_helper_hangs();
+  if (strcmp(argv[1], "datagram_queue_full") == 0) return test_datagram_queue_full();
   if (strcmp(argv[1], "exec_output") == 0) return exec_timeout("echo hello", true, "hello");
   if (strcmp(argv[1], "exec_split_output") == 0) return exec_timeout("printf 12; sleep 0.1; printf '345\\n'", true, "12345");
   if (strcmp(argv[1], "exec_child_hangs") == 0) return exec_timeout("echo $$ > child.pid; exec sleep 30", false, NULL);

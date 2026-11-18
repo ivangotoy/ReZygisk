@@ -188,6 +188,15 @@ void unix_datagram_sendto(const char *restrict path, const void *restrict buf, s
     return;
   }
 
+  /* INFO: A monitor that is not reading its queue must not block the daemon */
+  struct timeval send_timeout = {
+    .tv_sec = ZYGISKD_PEER_TIMEOUT_MS / 1000,
+    .tv_usec = (ZYGISKD_PEER_TIMEOUT_MS % 1000) * 1000
+  };
+  if (setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, &send_timeout, sizeof(send_timeout)) == -1) {
+    LOGW("Failed to set socket timeout: %s", strerror(errno));
+  }
+
   if (connect(socket_fd, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
     LOGE("connect: %s", strerror(errno));
 
