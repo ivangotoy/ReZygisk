@@ -42,6 +42,7 @@ enum {
   SERVER_FORK_AND_SPECIALIZE,
   DO_REVERT_UNMOUNT,
   SKIP_FD_SANITIZATION,
+  FORK_FAILED,
 
   FLAG_MAX
 };
@@ -74,6 +75,7 @@ struct zygisk_context {
   const char *process;
 
   int pid;
+  int fork_errno;
   uint32_t flags;
   uint32_t info_flags;
   uint8_t allowed_fds[MAX_FD_SIZE];
@@ -112,7 +114,8 @@ DCL_PRE_POST(nativeForkSystemServer);
 #undef DCL_PRE_POST
 
 static inline bool is_zygote_child(struct zygisk_context *ctx) {
-  return ctx->pid <= 0;
+  /* INFO: pid -1 is specializing in place, unless our fork failed (still zygote) */
+  return ctx->pid <= 0 && !FLAG_GET(ctx, FORK_FAILED);
 }
 
 struct plt_hook_entry {
@@ -240,6 +243,13 @@ static bool update_mnt_ns(enum mount_namespace_state mns_state, bool dry_run) {
            is non-0, or in other words, if we (libzygisk.so) already forked.
 */
 DCL_HOOK_FUNC(int, fork) {
+  /* INFO: Our fork failed: the native code gets that failure, not a second fork */
+  if (g_ctx && FLAG_GET(g_ctx, FORK_FAILED)) {
+    errno = g_ctx->fork_errno;
+
+    return -1;
+  }
+
   return (g_ctx && g_ctx->pid >= 0) ? g_ctx->pid : old_fork();
 }
 
@@ -999,6 +1009,10 @@ static void rz_fork_pre(struct zygisk_context *ctx) {
   */
   sigmask(SIG_BLOCK, SIGCHLD);
   ctx->pid = old_fork();
+  if (ctx->pid == -1) {
+    ctx->fork_errno = errno;
+    FLAG_SET(ctx, FORK_FAILED);
+  }
   if (ctx->pid != 0 || FLAG_GET(ctx, SKIP_FD_SANITIZATION)) return;
 
   /* INFO: Record all open fds */

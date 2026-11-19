@@ -3,6 +3,7 @@
    loader, PLT hook library and daemon calls are stand-ins, and
    pthread_mutex_lock can run another registration first, the way a
    second thread could between the capacity check and the lock. */
+#include <errno.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
@@ -251,6 +252,124 @@ static int test_fork_parent_releases_name(void) {
   return 1;
 }
 
+/* ---- a fork that fails in nativeForkAndSpecialize/nativeForkSystemServer:
+   zygote stays zygote, the native fork gets the failure ---- */
+static int fork_calls = 0;
+static int t_fork_fails(void) { fork_calls++; errno = EAGAIN; return -1; }
+static int entry_calls = 0;
+static void counting_entry(void *api, void *env) { (void)api; (void)env; entry_calls++; }
+
+static bool sigchld_blocked(void) {
+  sigset_t set;
+  sigprocmask(SIG_BLOCK, NULL, &set);
+
+  return sigismember(&set, SIGCHLD) == 1;
+}
+
+/* exit codes: 0 ok, 1 forked twice, 2 wrong fork result, 3 ran as child,
+   4 name not paired, 5 zygisk would unmap, 6 SIGCHLD left blocked */
+static int fork_failure_case(bool server) {
+  struct JNINativeInterface table;
+  memset(&table, 0, sizeof(table));
+  table.GetStringUTFChars = t_counting_get;
+  table.ReleaseStringUTFChars = t_counting_release;
+  JNIEnv env = &table;
+
+  jint uid = 10123;
+  jstring nice_name = (jstring)&uid;
+  jstring data_dir = NULL;
+  struct app_specialize_args_v5 app;
+  memset(&app, 0, sizeof(app));
+  app.uid = &uid;
+  app.nice_name = &nice_name;
+  app.app_data_dir = &data_dir;
+  struct server_specialize_args_v1 srv;
+  memset(&srv, 0, sizeof(srv));
+  srv.uid = &uid;
+
+  /* one loaded module: its entry runs only when modules are run */
+  zygisk_modules = calloc(1, sizeof(struct rezygisk_module));
+  zygisk_modules[0].zygisk_module_entry = counting_entry;
+  zygisk_modules[0].lib.img = &test_img;
+  zygisk_module_length = 1;
+
+  old_fork = t_fork_fails;
+
+  struct zygisk_context ctx;
+  rz_init(&ctx, &env, server ? (void *)&srv : (void *)&app);
+  if (server) rz_nativeForkSystemServer_pre(&ctx);
+  else rz_nativeForkAndSpecialize_pre(&ctx);
+
+  /* the original native's fork() */
+  errno = 0;
+  int ret = new_fork();
+  int ret_errno = errno;
+
+  if (server) rz_nativeForkSystemServer_post(&ctx);
+  else rz_nativeForkAndSpecialize_post(&ctx);
+  rz_cleanup(&ctx);
+
+  printf("fork calls %d, native fork %d errno %d, flags requests %d, module entries %d, name %d/%d, unmap %d, SIGCHLD blocked %d\n",
+         fork_calls, ret, ret_errno, flags_requests, entry_calls, utf_gets, utf_releases, should_unmap_zygisk, sigchld_blocked());
+
+  if (fork_calls != 1) return 1;
+  if (ret != -1 || ret_errno != EAGAIN) return 2;
+  if (flags_requests != 0 || entry_calls != 0) return 3;
+  if (!server && (utf_gets != 1 || utf_releases != 1)) return 4;
+  if (should_unmap_zygisk) return 5;
+  if (sigchld_blocked()) return 6;
+
+  return 0;
+}
+
+static int test_fork_fails(bool server) {
+  pid_t pid = fork();
+  if (pid == 0) _exit(fork_failure_case(server));
+
+  int status = 0;
+  waitpid(pid, &status, 0);
+  if (WIFEXITED(status) && WEXITSTATUS(status) == 0) return 0;
+
+  printf("failed %s fork: status 0x%x\n", server ? "system_server" : "app", status);
+
+  return 1;
+}
+
+/* specializing in place (no fork) is still the child: flags are asked for */
+static int test_specialize_in_place(void) {
+  pid_t pid = fork();
+  if (pid == 0) {
+    struct JNINativeInterface table;
+    memset(&table, 0, sizeof(table));
+    table.GetStringUTFChars = t_counting_get;
+    table.ReleaseStringUTFChars = t_counting_release;
+    JNIEnv env = &table;
+
+    jint uid = 10123;
+    jstring nice_name = (jstring)&uid;
+    jstring data_dir = NULL;
+    struct app_specialize_args_v5 app;
+    memset(&app, 0, sizeof(app));
+    app.uid = &uid;
+    app.nice_name = &nice_name;
+    app.app_data_dir = &data_dir;
+
+    struct zygisk_context ctx;
+    rz_init(&ctx, &env, &app);
+    rz_nativeSpecializeAppProcess_pre(&ctx);
+
+    _exit(flags_requests == 1 ? 0 : 1);
+  }
+
+  int status = 0;
+  waitpid(pid, &status, 0);
+  if (WIFEXITED(status) && WEXITSTATUS(status) == 0) return 0;
+
+  printf("specialize in place: status 0x%x\n", status);
+
+  return 1;
+}
+
 /* ---- JNI hooks (R15 :432): more methods than the 32-entry table ---- */
 #define NMETHODS 33
 static void *orig_fns[NMETHODS];
@@ -352,6 +471,9 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "unregistered_module_skipped") == 0) return test_unregistered_module_skipped();
   if (strcmp(argv[1], "isolated_without_data_dir") == 0) return test_isolated_without_data_dir();
   if (strcmp(argv[1], "fork_parent_releases_name") == 0) return test_fork_parent_releases_name();
+  if (strcmp(argv[1], "app_fork_fails") == 0) return test_fork_fails(false);
+  if (strcmp(argv[1], "server_fork_fails") == 0) return test_fork_fails(true);
+  if (strcmp(argv[1], "specialize_in_place") == 0) return test_specialize_in_place();
   if (strcmp(argv[1], "jni_table_full") == 0) return test_jni_table_full();
   if (strcmp(argv[1], "register_table_race") == 0) return table_race(false);
   if (strcmp(argv[1], "exclude_table_race") == 0) return table_race(true);
