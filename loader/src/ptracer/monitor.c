@@ -76,7 +76,7 @@ bool monitor_events_running = true;
 typedef void (*monitor_event_callback_t)();
 
 bool monitor_events_init() {
-  monitor_epoll_fd = epoll_create(1);
+  monitor_epoll_fd = epoll_create1(EPOLL_CLOEXEC);
   if (monitor_epoll_fd == -1) {
     PLOGE("epoll_create");
 

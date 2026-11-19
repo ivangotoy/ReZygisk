@@ -516,6 +516,18 @@ static int test_status_text_bounded(void) {
   return 1;
 }
 
+/* the epoll fd is not inherited by the processes the monitor starts */
+static int test_epoll_fd_cloexec(void) {
+  if (!monitor_events_init()) return 2;
+
+  int flags = fcntl(monitor_epoll_fd, F_GETFD);
+  if (flags != -1 && (flags & FD_CLOEXEC)) return 0;
+
+  printf("epoll fd %d flags %d: no FD_CLOEXEC\n", monitor_epoll_fd, flags);
+
+  return 1;
+}
+
 /* every byte sequence is a whole UTF-8 character */
 static int utf8_valid(const char *text) {
   const unsigned char *s = (const unsigned char *)text;
@@ -1088,6 +1100,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "prop_rewrite_exact") == 0) return test_prop_rewrite_exact();
   if (strcmp(argv[1], "prop_write_failure_keeps_old") == 0) return test_prop_write_failure_keeps_old();
   if (strcmp(argv[1], "status_text_bounded") == 0) return test_status_text_bounded();
+  if (strcmp(argv[1], "epoll_fd_cloexec") == 0) return test_epoll_fd_cloexec();
   if (strcmp(argv[1], "status_text_utf8_whole") == 0) return test_status_text_utf8_whole();
   if (strcmp(argv[1], "description_utf8_whole") == 0) return test_description_utf8_whole();
   if (strcmp(argv[1], "state_json_escapes") == 0) return test_state_json_escapes();
