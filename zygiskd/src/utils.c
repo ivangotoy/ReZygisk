@@ -234,7 +234,7 @@ int unix_listener_from_path(const char *restrict path) {
     return -1;
   }
 
-  int socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+  int socket_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
   if (socket_fd == -1) {
     LOGE("socket: %s", strerror(errno));
 
@@ -943,7 +943,7 @@ int save_mns_fd(int pid, enum MountNamespaceState mns_state, struct root_impl im
   char ns_path[PATH_MAX];
   snprintf(ns_path, PATH_MAX, "/proc/%d/ns/mnt", fork_pid);
 
-  int ns_fd = open(ns_path, O_RDONLY);
+  int ns_fd = open(ns_path, O_RDONLY | O_CLOEXEC);
   if (ns_fd == -1) {
     LOGE("open: %s", strerror(errno));
 

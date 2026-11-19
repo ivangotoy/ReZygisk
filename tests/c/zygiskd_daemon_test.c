@@ -35,11 +35,16 @@ static int t_open(const char *path, int flags, ...);
 static int inject_accept_errno = 0;
 static bool break_stdout = false;
 static int t_accept(int fd, struct sockaddr *addr, socklen_t *len);
+static int t_accept4(int fd, struct sockaddr *addr, socklen_t *len, int flags);
 #define accept(fd, a, l) t_accept(fd, a, l)
+#define accept4(fd, a, l, f) t_accept4(fd, a, l, f)
 
 #include "../../zygiskd/src/zygiskd.c"
 
 #undef accept
+#undef accept4
+#undef unix_listener_from_path
+int unix_listener_from_path(const char *restrict path);
 #undef opendir
 #undef access
 #undef open
@@ -97,8 +102,44 @@ static void fake_companion(int fd) {
    written to $TEST_DIR/spawn.pid) */
 static bool hang_spawn = false;
 
+/* fds open when the test binary started (from the caller, not zygiskd) */
+static bool open_at_start[256];
+
+/* when set, each companion spawn appends to $TEST_DIR/inherited.txt the
+   fds an exec would pass on (no FD_CLOEXEC) besides its own channel */
+static bool report_fds = false;
+
+static void report_inherited_fds(char *const argv[]) {
+  char list[2048] = "";
+  int channel = atoi(argv[2]);
+  for (int fd = 3; fd < 256; fd++) {
+    int flags = fcntl(fd, F_GETFD);
+    if (flags == -1 || (flags & FD_CLOEXEC) || fd == channel || open_at_start[fd]) continue;
+
+    const char *kind = "other";
+    int type = 0, listening = 0;
+    socklen_t len = sizeof(type);
+    if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &len) == 0) {
+      struct sockaddr_un name = { 0 };
+      socklen_t name_len = sizeof(name);
+      len = sizeof(listening);
+      if (getsockopt(fd, SOL_SOCKET, SO_ACCEPTCONN, &listening, &len) == 0 && listening) kind = "listener";
+      else if (getsockname(fd, (struct sockaddr *)&name, &name_len) == 0 && name_len > sizeof(sa_family_t) && name.sun_path[0]) kind = "client";
+      else kind = "socketpair";
+    }
+    snprintf(list + strlen(list), sizeof(list) - strlen(list), " %d:%s", fd, kind);
+  }
+
+  char path[PATH_MAX];
+  snprintf(path, sizeof(path), "%s/inherited.txt", getenv("TEST_DIR"));
+  FILE *f = fopen(path, "a");
+  if (f) { fprintf(f, "%s:%s\n", argv[0], list); fclose(f); }
+}
+
 int t_execv(const char *file, char *const argv[]) {
   (void)file;
+
+  if (report_fds) report_inherited_fds(argv);
 
   if (hang_spawn) {
     char path[PATH_MAX];
@@ -130,23 +171,24 @@ static int t_accept(int fd, struct sockaddr *addr, socklen_t *len) {
   return accept(fd, addr, len);
 }
 
-static char sock_path[PATH_MAX];
-
-int t_listener(const char *path) {
-  (void)path;
-
-  int fd = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (fd == -1) return -1;
-
-  struct sockaddr_un addr = { .sun_family = AF_UNIX };
-  strncpy(addr.sun_path, sock_path, sizeof(addr.sun_path) - 1);
-  if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) == -1 || listen(fd, 2) == -1) {
-    close(fd);
+static int t_accept4(int fd, struct sockaddr *addr, socklen_t *len, int flags) {
+  if (inject_accept_errno != 0) {
+    errno = inject_accept_errno;
+    inject_accept_errno = 0;
 
     return -1;
   }
 
-  return fd;
+  return accept4(fd, addr, len, flags);
+}
+
+static char sock_path[PATH_MAX];
+
+/* the real listener, bound at sock_path (relative to $TEST_DIR) */
+int t_listener(const char *path) {
+  (void)path;
+
+  return unix_listener_from_path(sock_path);
 }
 
 void t_sendto(const char *path, const void *buf, size_t len) { (void)path; (void)buf; (void)len; }
@@ -553,11 +595,68 @@ static int gone_client(bool remove_module) {
     return result;
 }
 
+/* a module companion inherits no zygiskd fd but its own channel: not the
+   listener, not the client whose request spawned it, not the daemon end
+   of an earlier companion */
+static int companion_inherits_no_fds(void) {
+  alarm(10);
+  if (make_modules(2) == -1) return 2;
+
+  char report[PATH_MAX];
+  snprintf(report, sizeof(report), "%s/inherited.txt", getenv("TEST_DIR"));
+  unlink(report);
+
+  report_fds = true;
+  pid_t daemon = start_daemon();
+  if (daemon == -1) return 2;
+
+  int result = 1;
+  for (size_t index = 0; index < 2; index++) {
+    int fd = connect_daemon();
+    if (fd == -1) goto out;
+
+    uint8_t action = RequestCompanionSocket;
+    if (write(fd, &action, 1) != 1 || write(fd, &index, sizeof(index)) != (ssize_t)sizeof(index)) goto out;
+    if (write(fd, "x", 1) != 1) goto out;
+
+    uint8_t ack = 0;
+    if (read(fd, &ack, 1) != 1 || ack != 1) { printf("companion %zu ack %u\n", index, ack); close(fd); goto out; }
+    close(fd);
+  }
+
+  char got[4096] = { 0 };
+  FILE *f = fopen(report, "r");
+  if (f == NULL) { printf("no report written\n"); goto out; }
+  fread(got, 1, sizeof(got) - 1, f);
+  fclose(f);
+
+  int lines = 0, clean = 0;
+  for (char *line = got; *line; ) {
+    char *nl = strchr(line, '\n');
+    if (nl == NULL) break;
+    lines++;
+    if (nl > line && nl[-1] == ':') clean++;
+    line = nl + 1;
+  }
+
+  if (lines == 2 && clean == 2) result = 0;
+  else printf("fds a companion exec would inherit (fd:kind):\n%s", got);
+
+  out:
+    kill(daemon, SIGKILL);
+    waitpid(daemon, NULL, 0);
+
+    return result;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
   setvbuf(stdout, NULL, _IONBF, 0);
 
+  for (int fd = 3; fd < 256; fd++) open_at_start[fd] = fcntl(fd, F_GETFD) != -1;
+
+  if (strcmp(argv[1], "companion_inherits_no_fds") == 0) return companion_inherits_no_fds();
   if (strcmp(argv[1], "survives_empty_client") == 0) return test_survives_empty_client();
   if (strcmp(argv[1], "accept_econnaborted") == 0) return accept_error(ECONNABORTED, true);
   if (strcmp(argv[1], "accept_eintr") == 0) return accept_error(EINTR, true);

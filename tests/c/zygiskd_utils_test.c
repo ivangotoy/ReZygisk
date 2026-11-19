@@ -236,6 +236,23 @@ static int test_mns_unknown_state_refused(void) {
   return 1;
 }
 
+/* the saved namespace fd is not inherited by exec'd children (companions,
+   commands) */
+static int test_saved_ns_fd_cloexec(void) {
+  if (make_test_dir() == -1) return 2;
+
+  struct root_impl impl = { .impl = Magisk, .variant = 0 };
+  int ns_fd = save_mns_fd(getpid(), Mounted, impl);
+  if (ns_fd == -1) return 2;
+
+  int flags = fcntl(ns_fd, F_GETFD);
+  if (flags != -1 && (flags & FD_CLOEXEC)) return 0;
+
+  printf("namespace fd %d flags %d: no FD_CLOEXEC\n", ns_fd, flags);
+
+  return 1;
+}
+
 static int test_mounted_ns_logs_no_error(void) {
   if (make_test_dir() == -1) return 2;
 
@@ -403,6 +420,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "exec_child_hangs_after_closing") == 0) return exec_timeout("echo $$ > child.pid; exec >&-; exec sleep 30", false, NULL);
   if (strcmp(argv[1], "clean_ns_failure_reaps_child") == 0) return test_clean_ns_failure_reaps_child();
   if (strcmp(argv[1], "mns_unknown_state_refused") == 0) return test_mns_unknown_state_refused();
+  if (strcmp(argv[1], "saved_ns_fd_cloexec") == 0) return test_saved_ns_fd_cloexec();
   if (strcmp(argv[1], "mounted_ns_logs_no_error") == 0) return test_mounted_ns_logs_no_error();
 
   return 2;

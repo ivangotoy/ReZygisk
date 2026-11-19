@@ -449,6 +449,7 @@ c_test zygiskd_utils sockcreate_no_leak "zygiskd set_socket_create_context: fail
 c_test zygiskd_utils clean_ns_unshare_fails "zygiskd save_mns_fd: failed unshare unmounts nothing"
 c_test zygiskd_utils clean_ns_failure_reaps_child "zygiskd save_mns_fd: failure reaps the helper child"
 c_test zygiskd_utils mns_unknown_state_refused "zygiskd save_mns_fd: an unknown namespace state is refused (no fd left open)"
+c_test zygiskd_utils saved_ns_fd_cloexec "zygiskd save_mns_fd: the saved namespace fd is closed on exec"
 c_test zygiskd_utils mounted_ns_logs_no_error "zygiskd save_mns_fd: success logs no error"
 
 # helpers with a 200 ms ZYGISKD_PEER_TIMEOUT_MS
@@ -480,6 +481,7 @@ c_test zygiskd_daemon_timeout stalled_client_mid_request "zygiskd: a client stuc
 c_test zygiskd_daemon_timeout companion_channel_untimed "zygiskd: the client fd handed to a companion carries no timeout"
 c_test zygiskd_daemon_timeout companion_spawn_hangs "zygiskd: a companion spawn that never finishes fails the request in time"
 c_test zygiskd_daemon_timeout companion_handshake_stalls "zygiskd: a companion that never answers its handshake fails the request in time"
+c_test zygiskd_daemon_timeout companion_inherits_no_fds "zygiskd: a module companion inherits no zygiskd fd but its own channel"
 c_test zygiskd_daemon_timeout gone_client_remove_module "zygiskd: a RemoveModule whose client already left is not carried out"
 c_test zygiskd_daemon_timeout gone_client_process_flags "zygiskd: a flags request whose client already left does not use up the first-process flag"
 

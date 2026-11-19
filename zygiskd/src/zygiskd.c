@@ -181,7 +181,7 @@ static int create_daemon_socket(void) {
 
 static int spawn_companion(char *restrict argv[], char *restrict name, int lib_fd) {
   int sockets[2];
-  if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == -1) {
+  if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sockets) == -1) {
     LOGE("Failed creating socket pair.");
 
     return -1;
@@ -388,7 +388,7 @@ void zygiskd_start(char *restrict argv[]) {
 
   bool first_process = true;
   while (1) {
-    int client_fd = accept(socket_fd, NULL, NULL);
+    int client_fd = accept4(socket_fd, NULL, NULL, SOCK_CLOEXEC);
     if (client_fd == -1) {
       /* INFO: Logging can change errno */
       int accept_errno = errno;
