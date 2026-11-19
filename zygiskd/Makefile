@@ -8,6 +8,12 @@ OBJ_DIR = $(OBJ_ROOT)/$(ARCH)
 
 ZKSU_VERSION ?= $(VER_NAME)
 
+# INFO: Rewritten only when the embedded version or a MIN_* value changes, so the objects follow it
+VERSION_STAMP = $(OBJ_DIR)/.version
+ifneq ($(MAKECMDGOALS),clean)
+$(shell mkdir -p '$(OBJ_DIR)' && [ "$$(cat '$(VERSION_STAMP)' 2>/dev/null)" = '$(ZKSU_VERSION) $(MIN_APATCH_VERSION) $(MIN_KSU_VERSION) $(MIN_MAGISK_VERSION)' ] || printf '%s\n' '$(ZKSU_VERSION) $(MIN_APATCH_VERSION) $(MIN_KSU_VERSION) $(MIN_MAGISK_VERSION)' > '$(VERSION_STAMP)')
+endif
+
 ifeq ($(BUILD_TYPE),release)
 	TYPE_CFLAGS = -O3 -ffast-math -flto
 	TYPE_LDFLAGS = -Wl,--strip-all -flto
@@ -48,10 +54,18 @@ arch: $(BIN)
 clean:
 	rm -rf $(BUILD_DIR)/obj/$(BUILD_TYPE)/zygiskd
 
-$(OBJ_DIR)/%.o: src/%.c
+# INFO: Also written here when missing, as after a clean in the same call
+$(VERSION_STAMP):
 	@mkdir -p $(dir $@)
-	$(CC_ARCH) $(ZYGISKD_CFLAGS) $(TYPE_CFLAGS) $(INCLUDES) -c $< -o $@
+	@printf '%s\n' '$(ZKSU_VERSION) $(MIN_APATCH_VERSION) $(MIN_KSU_VERSION) $(MIN_MAGISK_VERSION)' > $@
+
+$(OBJ_DIR)/%.o: src/%.c Makefile ../common.mk $(VERSION_STAMP)
+	@mkdir -p $(dir $@)
+	$(CC_ARCH) $(ZYGISKD_CFLAGS) $(TYPE_CFLAGS) $(INCLUDES) -MMD -MP -MF $(@:.o=.d) -c $< -o $@
 
 $(BIN): $(OBJS)
 	@mkdir -p $(dir $@)
 	$(CC_ARCH) $(TYPE_LDFLAGS) $(OBJS) -llog -o $@
+
+# INFO: Header dependencies written by -MMD next to each object
+-include $(OBJS:.o=.d)

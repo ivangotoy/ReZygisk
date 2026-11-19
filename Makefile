@@ -8,6 +8,13 @@ ZIP_DIR = $(BUILD_DIR)/out
 
 ZKSU_VERSION = $(VER_NAME)-$(VER_CODE)-$(COMMIT_HASH)-$(BUILD_TYPE)
 
+# INFO: Rewritten only when the version changes, so a new commit redoes the
+#         stamps below and the binaries and module.prop that carry the version
+VERSION_STAMP = $(BUILD_DIR)/version-$(BUILD_TYPE)
+ifeq ($(filter clean,$(MAKECMDGOALS)),)
+$(shell mkdir -p '$(BUILD_DIR)' && [ "$$(cat '$(VERSION_STAMP)' 2>/dev/null)" = '$(ZKSU_VERSION)' ] || printf '%s\n' '$(ZKSU_VERSION)' > '$(VERSION_STAMP)')
+endif
+
 ZIP_NAME = $(MODULE_NAME)-$(VER_NAME)-$(VER_CODE)-$(COMMIT_HASH)-$(BUILD_TYPE).zip
 ZIP_FILE = $(ZIP_DIR)/$(ZIP_NAME)
 
@@ -50,17 +57,22 @@ all: debug release
 
 build: $(ZIP_FILE)
 
-$(LOADER_DONE): $(LOADER_INPUTS)
+# INFO: Also written here when missing, as after a clean in the same call
+$(VERSION_STAMP):
+	@mkdir -p $(dir $@)
+	@printf '%s\n' '$(ZKSU_VERSION)' > $@
+
+$(LOADER_DONE): $(LOADER_INPUTS) $(VERSION_STAMP)
 	$(MAKE) -C loader BUILD_TYPE=$(BUILD_TYPE) BUILD_DIR=$(BUILD_DIR) ZKSU_VERSION=$(ZKSU_VERSION)
 	@mkdir -p $(dir $@)
 	@touch $@
 
-$(ZYGISKD_DONE): $(ZYGISKD_INPUTS)
+$(ZYGISKD_DONE): $(ZYGISKD_INPUTS) $(VERSION_STAMP)
 	$(MAKE) -C zygiskd BUILD_TYPE=$(BUILD_TYPE) BUILD_DIR=$(BUILD_DIR) ZKSU_VERSION=$(ZKSU_VERSION)
 	@mkdir -p $(dir $@)
 	@touch $@
 
-$(MODULE_DONE): $(LOADER_DONE) $(ZYGISKD_DONE) $(MODULE_INPUTS)
+$(MODULE_DONE): $(LOADER_DONE) $(ZYGISKD_DONE) $(MODULE_INPUTS) $(VERSION_STAMP)
 
 	@rm -rf $(MODULE_OUT)
 	@mkdir -p $(MODULE_OUT)/META-INF/com/google/android

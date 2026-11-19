@@ -616,6 +616,122 @@ c_test loader_socket read_string_huge_length "loader read_string: SIZE_MAX lengt
 c_test loader_socket read_uint32_full "loader read_uint32_t: reads a full value"
 c_test loader_socket read_uint32_short "loader read_uint32_t: short answer is a read failure"
 
+echo "== Makefile dependencies"
+# Copies of the real loader/zygiskd/top Makefiles and common.mk build fake
+# sources with a stub compiler that writes the object and, given -MF, a
+# dependency file naming the headers the source includes. Times are set
+# back so that only the file under test is newer than its target. A
+# missing make counts like a missing C compiler.
+mk_skip() { CC_SKIPPED=$((CC_SKIPPED + 1)); skip "$1" "no make"; }
+old() { touch -t 200001010000 "$@"; }
+mk_stub_cc() {
+  cat > "$S/cc" <<'CCSTUB'
+#!/bin/sh
+out= src= dep= incs= prev=
+for a do
+  case $prev in -o) out=$a ;; -MF) dep=$a ;; esac
+  case $a in -I*) incs="$incs ${a#-I}" ;; *.c) src=$a ;; esac
+  prev=$a
+done
+echo "$out" >> "$CC_LOG"
+: > "$out"
+if [ -n "$dep" ]; then
+  hdrs=
+  for h in $(sed -n 's/^#include "\(.*\)"/\1/p' "$src"); do
+    for d in $incs; do if [ -f "$d/$h" ]; then hdrs="$hdrs $d/$h"; break; fi; done
+  done
+  { echo "$out: $src$hdrs"; for h in $hdrs; do echo "$h:"; done; } > "$dep"
+fi
+CCSTUB
+  chmod +x "$S/cc"
+}
+# mk_tree <case> <loader|zygiskd>: $C/<part>/Makefile and $C/common.mk copied
+# from the repo, one source including one header
+mk_tree() {
+  new_case "$1"; mk_stub_cc
+  MK_DIR="$C/$2"; mkdir -p "$MK_DIR"
+  cp "$R/common.mk" "$C/common.mk"; cp "$R/$2/Makefile" "$MK_DIR/Makefile"
+  if [ "$2" = loader ]; then
+    mkdir -p "$MK_DIR/src/include" "$MK_DIR/src/common"
+    MK_SRC=src/common/misc.c MK_HDR=src/include/t.h MK_OBJ="$C/b/obj/debug/loader/x86_64/common/misc.o"
+  else
+    mkdir -p "$MK_DIR/src"
+    MK_SRC=src/utils.c MK_HDR=src/t.h MK_OBJ="$C/b/obj/debug/zygiskd/x86_64/utils.o"
+  fi
+  printf '#define T 1\n' > "$MK_DIR/$MK_HDR"
+  printf '#include "t.h"\nint x = T;\n' > "$MK_DIR/$MK_SRC"
+}
+# mk_make <ZKSU_VERSION> <goal>...: no git, nothing from the host toolchain
+mk_make() {
+  mk_version=$1; shift
+  (cd "$MK_DIR" && CC_LOG="$C/cc.log" make -s BUILD_DIR="$C/b" BUILD_TYPE=debug ARCH=x86_64 CC="$S/cc" \
+    ZKSU_VERSION="$mk_version" VER_CODE=1 COMMIT_HASH=test "$@") >> "$C/out" 2>&1
+}
+mk_backdate() {
+  old "$MK_DIR/$MK_SRC" "$MK_DIR/$MK_HDR" "$MK_DIR/Makefile" "$C/common.mk"
+  find "$C/b" -type f -exec touch -t 200001010000 {} +
+}
+mk_builds() { if [ -f "$C/cc.log" ]; then wc -l < "$C/cc.log" | tr -d ' '; else echo 0; fi; }
+
+for part in loader zygiskd; do
+  if ! have make; then
+    mk_skip "make $part: an edited header rebuilds the objects that include it"
+    mk_skip "make $part: a new version rebuilds the objects that embed it"
+    mk_skip "make $part: an edited common.mk rebuilds the objects"
+    mk_skip "make $part: clean leaves no build dir behind"
+    mk_skip "make $part: clean and a build in one call still builds"
+    continue
+  fi
+  mk_tree "mk-$part-hdr" "$part"; mk_make v1 "$MK_OBJ"; mk_backdate; touch "$MK_DIR/$MK_HDR"; mk_make v1 "$MK_OBJ"
+  expect_eq "make $part: an edited header rebuilds the objects that include it" 2 "$(mk_builds)"
+  mk_tree "mk-$part-ver" "$part"; mk_make v1 "$MK_OBJ"; mk_backdate; mk_make v2 "$MK_OBJ"
+  expect_eq "make $part: a new version rebuilds the objects that embed it" 2 "$(mk_builds)"
+  mk_tree "mk-$part-flags" "$part"; mk_make v1 "$MK_OBJ"; mk_backdate; touch "$C/common.mk"; mk_make v1 "$MK_OBJ"
+  expect_eq "make $part: an edited common.mk rebuilds the objects" 2 "$(mk_builds)"
+  mk_tree "mk-$part-clean" "$part"; mk_make v1 clean
+  check "make $part: clean leaves no build dir behind" test ! -e "$C/b"
+  mk_tree "mk-$part-cleanbuild" "$part"; mk_make v1 clean "$MK_OBJ"
+  check "make $part: clean and a build in one call still builds" test -f "$MK_OBJ"
+done
+
+# the plti library follows its submodule's files (csoloader has the same rule)
+if have make; then
+  mk_tree mk-plti loader
+  mkdir -p "$MK_DIR/src/external/plti/src"
+  printf 'int p;\n' > "$MK_DIR/src/external/plti/src/plti.c"
+  printf 'all:\n\t@mkdir -p $(out) && echo built >> $(out)/../built.log && : > $(out)/libplti.a\n' > "$MK_DIR/src/external/plti/Makefile"
+  LIB="$C/b/obj/debug/plti/x86_64/libplti.a"
+  mk_make v1 "$LIB"; old "$LIB" "$MK_DIR/src/external/plti/Makefile"; touch "$MK_DIR/src/external/plti/src/plti.c"; mk_make v1 "$LIB"
+  built=0; [ -f "$C/b/obj/debug/plti/built.log" ] && built=$(wc -l < "$C/b/obj/debug/plti/built.log" | tr -d ' ')
+  expect_eq "make loader: an edited submodule source rebuilds its library" 2 "$built"
+else
+  mk_skip "make loader: an edited submodule source rebuilds its library"
+fi
+
+# top Makefile: a new version (a new commit) makes every stamp out of date
+if have make; then
+  new_case mk-top
+  TOP="$C/top"; mkdir -p "$TOP/loader/src" "$TOP/zygiskd/src" "$TOP/module/src" "$TOP/webroot" "$TOP/scripts"
+  cp "$R/Makefile" "$R/common.mk" "$TOP/"
+  for f in loader/src/a.c zygiskd/src/a.c module/src/x webroot/x scripts/sign.py; do : > "$TOP/$f"; done
+  # make -q still runs the $(MAKE) lines of an out-of-date stamp: sub-makes that build nothing
+  printf 'all:\n\t@:\n' > "$TOP/loader/Makefile"; printf 'all:\n\t@:\n' > "$TOP/zygiskd/Makefile"
+  mk_q() { (cd "$TOP" && make -q BUILD_DIR="$TOP/build" BUILD_TYPE=debug VER_CODE="$1" COMMIT_HASH=test "$2") >> "$C/out" 2>&1; echo $?; }
+  mk_q 1 "$TOP/build/obj/debug/loader/.done" > /dev/null
+  mkdir -p "$TOP/build/obj/debug/loader" "$TOP/build/obj/debug/zygiskd"
+  : > "$TOP/build/obj/debug/loader/.done"; : > "$TOP/build/obj/debug/zygiskd/.done"; : > "$TOP/build/module-debug.done"
+  find "$TOP" -type f -exec touch -t 200001010000 {} +
+  touch -t 200101010000 "$TOP/build/obj/debug/loader/.done" "$TOP/build/obj/debug/zygiskd/.done" "$TOP/build/module-debug.done"
+  same="" newv=""
+  for st in obj/debug/loader/.done obj/debug/zygiskd/.done module-debug.done; do same="$same $(mk_q 1 "$TOP/build/$st")"; done
+  for st in obj/debug/loader/.done obj/debug/zygiskd/.done module-debug.done; do newv="$newv $(mk_q 2 "$TOP/build/$st")"; done
+  expect_eq "make: the loader, zygiskd and module stamps stay up to date for the same version" " 0 0 0" "$same"
+  expect_eq "make: a new version makes the loader, zygiskd and module stamps out of date" " 1 1 1" "$newv"
+else
+  mk_skip "make: the loader, zygiskd and module stamps stay up to date for the same version"
+  mk_skip "make: a new version makes the loader, zygiskd and module stamps out of date"
+fi
+
 echo "== WebUI (node)"
 # tests/webui/webui_test.mjs imports the real webroot/js files with
 # browser and KernelSU stand-ins

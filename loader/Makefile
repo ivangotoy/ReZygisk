@@ -8,6 +8,12 @@ OBJ_DIR = $(OBJ_ROOT)/$(ARCH)
 
 ZKSU_VERSION ?= $(VER_NAME)-$(VER_CODE)-$(COMMIT_HASH)-$(BUILD_TYPE)
 
+# INFO: Rewritten only when the embedded version changes, so the objects follow it
+VERSION_STAMP = $(OBJ_DIR)/.version
+ifneq ($(MAKECMDGOALS),clean)
+$(shell mkdir -p '$(OBJ_DIR)' && [ "$$(cat '$(VERSION_STAMP)' 2>/dev/null)" = '$(ZKSU_VERSION)' ] || printf '%s\n' '$(ZKSU_VERSION)' > '$(VERSION_STAMP)')
+endif
+
 ifeq ($(BUILD_TYPE),release)
 	TYPE_CFLAGS = -O3 -ffast-math -flto -Wno-unused -Wno-unused-parameter       \
 				  -fvisibility=hidden -fvisibility-inlines-hidden -fno-unwind-tables \
@@ -69,32 +75,38 @@ clean:
 	rm -rf $(BUILD_DIR)/obj/$(BUILD_TYPE)/plti
 	rm -rf $(BUILD_DIR)/obj/$(BUILD_TYPE)/csoloader
 
-$(PLTI_LIB):
+# INFO: Also written here when missing, as after a clean in the same call
+$(VERSION_STAMP):
 	@mkdir -p $(dir $@)
-	$(MAKE) -C $(PLTI_DIR) BUILD_TYPE=$(BUILD_TYPE) ARCH=$(ARCH) \
+	@printf '%s\n' '$(ZKSU_VERSION)' > $@
+
+# INFO: Rebuilt whole (-B) when a file of its submodule changes
+$(PLTI_LIB): $(PLTI_DIR)/Makefile $(shell find $(PLTI_DIR)/src -type f 2>/dev/null)
+	@mkdir -p $(dir $@)
+	$(MAKE) -B -C $(PLTI_DIR) BUILD_TYPE=$(BUILD_TYPE) ARCH=$(ARCH) \
 		NDK_PATH=$(NDK_PATH) API_LEVEL=$(API_LEVEL)              \
 		out=$(BUILD_DIR)/obj/$(BUILD_TYPE)/plti/$(ARCH)
 
-$(CSOLOADER_LIB):
+$(CSOLOADER_LIB): $(CSOLOADER_DIR)/Makefile $(shell find $(CSOLOADER_DIR)/src $(CSOLOADER_DIR)/include -type f 2>/dev/null)
 	@mkdir -p $(dir $@)
-	$(MAKE) -C $(CSOLOADER_DIR) BUILD_TYPE=$(BUILD_TYPE) ARCH=$(ARCH) \
+	$(MAKE) -B -C $(CSOLOADER_DIR) BUILD_TYPE=$(BUILD_TYPE) ARCH=$(ARCH) \
 		NDK_PATH=$(NDK_PATH) API_LEVEL=$(API_LEVEL)                   \
 		out=$(BUILD_DIR)/obj/$(BUILD_TYPE)/csoloader/$(ARCH)
 
-$(OBJ_DIR)/common/%.o: src/common/%.c
+$(OBJ_DIR)/common/%.o: src/common/%.c Makefile ../common.mk $(VERSION_STAMP)
 	@mkdir -p $(dir $@)
 	$(CC_ARCH) $(NDK_CFLAGS) $(LOADER_CFLAGS) $(TYPE_CFLAGS) \
-		$(COMMON_INCLUDES) -fPIC -c $< -o $@
+		$(COMMON_INCLUDES) -fPIC -MMD -MP -MF $(@:.o=.d) -c $< -o $@
 
-$(OBJ_DIR)/injector/%.o: src/injector/%.c
+$(OBJ_DIR)/injector/%.o: src/injector/%.c Makefile ../common.mk $(VERSION_STAMP)
 	@mkdir -p $(dir $@)
 	$(CC_ARCH) $(NDK_CFLAGS) $(LOADER_CFLAGS) $(TYPE_CFLAGS) \
-		$(INJECTOR_INCLUDES) -Dzygisk_EXPORTS -fPIC -c $< -o $@
+		$(INJECTOR_INCLUDES) -Dzygisk_EXPORTS -fPIC -MMD -MP -MF $(@:.o=.d) -c $< -o $@
 
-$(OBJ_DIR)/ptracer/%.o: src/ptracer/%.c
+$(OBJ_DIR)/ptracer/%.o: src/ptracer/%.c Makefile ../common.mk $(VERSION_STAMP)
 	@mkdir -p $(dir $@)
 	$(CC_ARCH) $(NDK_CFLAGS) $(LOADER_CFLAGS) $(TYPE_CFLAGS) \
-		$(COMMON_INCLUDES) -fPIE -c $< -o $@
+		$(COMMON_INCLUDES) -fPIE -MMD -MP -MF $(@:.o=.d) -c $< -o $@
 
 $(LIBCOMMON): $(COMMON_OBJS)
 	@mkdir -p $(dir $@)
@@ -121,3 +133,6 @@ $(LIBPTRACE_STRIPPED): $(LIBPTRACE)
 	@mkdir -p $(dir $@)
 	cp $< $@
 	$(STRIP) --strip-all $@
+
+# INFO: Header dependencies written by -MMD next to each object
+-include $(COMMON_OBJS:.o=.d) $(INJECTOR_OBJS:.o=.d) $(PTRACER_OBJS:.o=.d)
