@@ -1391,6 +1391,9 @@ static void rz_nativeForkAndSpecialize_post(struct zygisk_context *ctx) {
   if (ctx->pid == 0) {
     LOGV("post forkAndSpecialize [%s]", ctx->process);
     rz_app_specialize_post(ctx);
+  } else {
+    /* INFO: Zygote side: the child releases its own copy in rz_app_specialize_post */
+    (*ctx->env)->ReleaseStringUTFChars(ctx->env, *ctx->args.app->nice_name, ctx->process);
   }
 
   rz_fork_post(ctx);

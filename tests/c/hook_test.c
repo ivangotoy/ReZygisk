@@ -215,6 +215,42 @@ static int test_isolated_without_data_dir(void) {
   return 1;
 }
 
+/* ---- the process name taken before an app fork is released once in
+   zygote too ---- */
+static int utf_gets = 0, utf_releases = 0;
+static const char *t_counting_get(JNIEnv *env, jstring s, jboolean *copy) { (void)env; (void)s; (void)copy; utf_gets++; return "com.example.app"; }
+static void t_counting_release(JNIEnv *env, jstring s, const char *c) { (void)env; (void)s; (void)c; utf_releases++; }
+static int t_fork_parent(void) { return 12345; }
+
+static int test_fork_parent_releases_name(void) {
+  struct JNINativeInterface table;
+  memset(&table, 0, sizeof(table));
+  table.GetStringUTFChars = t_counting_get;
+  table.ReleaseStringUTFChars = t_counting_release;
+  JNIEnv env = &table;
+
+  jint uid = 10123;
+  jstring nice_name = (jstring)&uid;
+  struct app_specialize_args_v5 args;
+  memset(&args, 0, sizeof(args));
+  args.uid = &uid;
+  args.nice_name = &nice_name;
+
+  old_fork = t_fork_parent;
+
+  struct zygisk_context ctx;
+  rz_init(&ctx, &env, &args);
+  rz_nativeForkAndSpecialize_pre(&ctx);
+  rz_nativeForkAndSpecialize_post(&ctx);
+  rz_cleanup(&ctx);
+
+  if (utf_gets == 1 && utf_releases == 1) return 0;
+
+  printf("zygote side of an app fork: %d GetStringUTFChars, %d ReleaseStringUTFChars\n", utf_gets, utf_releases);
+
+  return 1;
+}
+
 /* ---- JNI hooks (R15 :432): more methods than the 32-entry table ---- */
 #define NMETHODS 33
 static void *orig_fns[NMETHODS];
@@ -315,6 +351,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "remove_failed_modules") == 0) return test_remove_failed_modules();
   if (strcmp(argv[1], "unregistered_module_skipped") == 0) return test_unregistered_module_skipped();
   if (strcmp(argv[1], "isolated_without_data_dir") == 0) return test_isolated_without_data_dir();
+  if (strcmp(argv[1], "fork_parent_releases_name") == 0) return test_fork_parent_releases_name();
   if (strcmp(argv[1], "jni_table_full") == 0) return test_jni_table_full();
   if (strcmp(argv[1], "register_table_race") == 0) return table_race(false);
   if (strcmp(argv[1], "exclude_table_race") == 0) return table_race(true);
