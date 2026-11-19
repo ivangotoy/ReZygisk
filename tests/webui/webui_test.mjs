@@ -46,8 +46,13 @@ globalThis.window = new Proxy({
 // addEventListener records the handlers
 const elements = {}
 const documentHandlers = {}
+const elementHandlers = {}
+// when set, only the navbar button of this page is checked (whichCurrentPage)
+let currentPage = null
 const element = (id) => (elements[id] ||= new Proxy({ innerHTML: '' }, {
-  get: (t, p) => (p === 'innerHTML' ? t.innerHTML : anything),
+  get: (t, p) => (p === 'innerHTML' ? t.innerHTML :
+    p === 'addEventListener' ? (name, fn) => { ((elementHandlers[id] ||= {})[name] ||= []).push(fn) } :
+    p === 'hasAttribute' && currentPage ? (name) => name === 'checked' && id === `n_${currentPage}` : anything),
   set: (t, p, v) => { if (p === 'innerHTML') t.innerHTML = String(v); return true }
 }))
 globalThis.document = new Proxy({}, {
@@ -196,6 +201,34 @@ switch (testCase) {
     const want = strings.pages.home.info.zygote.notInjected
     const got = elements.zygote64_status ? elements.zygote64_status.innerHTML : ''
     if (got !== want) fail(`zygote64 status: ${JSON.stringify(got)}, expected ${JSON.stringify(want)}`)
+    break
+  }
+  case 'monitor_ctl_binary': {
+    // the monitor buttons reach whichever zygisk-ptrace is installed
+    currentPage = 'actions'
+    const actions = await import(pathToFileURL(join(web, 'js', 'pages', 'actions', 'index.js')))
+    await actions.load()
+    const strings = JSON.parse(readFileSync(join(web, 'lang', 'en_US.json'), 'utf8')).pages.actions
+    for (const installed of [['32'], ['64', '32']]) {
+      const bin = join(scratch, `modules-${installed.join('-')}`, 'rezygisk', 'bin')
+      mkdirSync(bin, { recursive: true })
+      for (const abi of installed) {
+        writeFileSync(join(bin, `zygisk-ptrace${abi}`), `#!/bin/sh\necho "${abi} $*" > "${bin}/ran"\n`, { mode: 0o755 })
+      }
+      for (const [button, want] of [['monitor_start_button', 'ctl start'], ['monitor_pause_button', 'ctl stop'], ['monitor_stop_button', 'ctl exit']]) {
+        element('monitor_status').innerHTML = strings.monitor.status.tracing
+        commands.length = 0
+        for (const fn of (elementHandlers[button] || {}).click || []) fn()
+        const command = commands.find((c) => c.includes('zygisk-ptrace'))
+        if (!command) fail(`${button}: no command`)
+        writeFileSync(join(bin, 'ran'), '')
+        try {
+          execFileSync('sh', ['-c', command.replaceAll('/data/adb/modules/', `${dirname(dirname(bin))}/`)])
+        } catch (e) {}
+        const ran = readFileSync(join(bin, 'ran'), 'utf8').trim()
+        if (ran !== `${installed[0]} ${want}`) fail(`${button} with zygisk-ptrace ${installed.join(', ')} installed ran: ${JSON.stringify(ran)} (command: ${command})`)
+      }
+    }
     break
   }
   case 'modules_state_unreadable': {

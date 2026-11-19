@@ -2,6 +2,11 @@ import { whichCurrentPage } from '../navbar.js'
 import { getStrings } from '../pageLoader.js'
 import { exec, toast } from '../../kernelsu.js'
 
+/* INFO: 32-bit-only devices have only zygisk-ptrace32; either one reaches the monitor */
+function monitorCtl(command) {
+  return exec(`for abi in 64 32; do tracer=/data/adb/modules/rezygisk/bin/zygisk-ptrace$abi; if [ -x "$tracer" ]; then exec "$tracer" ctl ${command}; fi; done; exit 1`)
+}
+
 async function _getMonitorState() {
   const stateCmd = await exec('/system/bin/cat /data/adb/rezygisk/state.json')
   if (stateCmd.errno !== 0) {
@@ -56,18 +61,18 @@ export async function load() {
   monitor_start.addEventListener('click', () => {
     if (![ strings.monitor.status.tracing, strings.monitor.status.stopping, strings.monitor.status.stopped ].includes(monitor_status.innerHTML)) return;
     monitor_status.innerHTML = strings.monitor.status.tracing
-    exec('/data/adb/modules/rezygisk/bin/zygisk-ptrace64 ctl start')
+    monitorCtl('start')
   })
 
   monitor_stop.addEventListener('click', () => {
     monitor_status.innerHTML = strings.monitor.status.exiting
-    exec('/data/adb/modules/rezygisk/bin/zygisk-ptrace64 ctl exit')
+    monitorCtl('exit')
   })
 
   monitor_pause.addEventListener('click', () => {
     if (![ strings.monitor.status.tracing, strings.monitor.status.stopping, strings.monitor.status.stopped ].includes(monitor_status.innerHTML)) return;
     monitor_status.innerHTML = strings.monitor.status.stopped
-    exec('/data/adb/modules/rezygisk/bin/zygisk-ptrace64 ctl stop')
+    monitorCtl('stop')
   })
 
   return;
