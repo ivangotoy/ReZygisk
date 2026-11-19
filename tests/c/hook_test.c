@@ -9,9 +9,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #undef sigmask
+
+/* malloc: with poison_malloc set, a new module table holds stale module
+   entries like reused heap memory */
+static bool poison_malloc = false;
+static void *t_malloc(size_t size);
+#define malloc(n) t_malloc(n)
 
 static int t_mutex_lock(pthread_mutex_t *m);
 #define pthread_mutex_lock(m) t_mutex_lock(m)
@@ -19,6 +26,26 @@ static int t_mutex_lock(pthread_mutex_t *m);
 #include "../../loader/src/injector/hook.c"
 
 #undef pthread_mutex_lock
+#undef malloc
+
+/* a hook left in stale memory: reaching it ends the process */
+static void stale_hook(void *impl, const void *args) { (void)impl; (void)args; _exit(3); }
+
+/* a block the size of a module table is filled like a freed table of
+   registered API v5 modules (the stale bytes a reused block can hold) */
+static void *t_malloc(size_t size) {
+  void *p = malloc(size);
+  if (p && poison_malloc && size > 0 && size % sizeof(struct rezygisk_module) == 0) {
+    for (struct rezygisk_module *m = p; (char *)m < (char *)p + size; m++) {
+      memset(m, 0x5a, sizeof(*m));
+      m->abi.api_version = 5;
+      m->abi.pre_app_specialize = (void *)stale_hook;
+      m->abi.post_app_specialize = (void *)stale_hook;
+    }
+  }
+
+  return p;
+}
 
 /* link stand-ins for what the tested functions do not reach */
 void free_maps(struct maps_info *maps) { (void)maps; }
@@ -57,7 +84,8 @@ void free_modules(struct zygisk_modules *modules) {
   free(modules->modules);
 }
 
-bool csoloader_load(struct csoloader *lib, const char *lib_path) { (void)lib; return strstr(lib_path, "broken") == NULL; }
+static struct csoloader_elf test_img = { .elf = "test.so" };
+bool csoloader_load(struct csoloader *lib, const char *lib_path) { lib->img = &test_img; return strstr(lib_path, "broken") == NULL; }
 bool csoloader_unload(struct csoloader *lib) { (void)lib; return true; }
 static void fake_entry(void *a, void *b) { (void)a; (void)b; }
 void *csoloader_get_symbol(struct csoloader *lib, const char *name) { (void)lib; (void)name; return (void *)fake_entry; }
@@ -90,6 +118,51 @@ static int test_remove_failed_modules(void) {
   printf("removed %d module(s): indices", removed_count);
   for (int i = 0; i < removed_count; i++) printf(" %zu", removed[i]);
   printf(", %zu loaded\n", zygisk_module_length);
+
+  return 1;
+}
+
+/* ---- a module whose entry never registers: its pre/post specialize
+   hooks are absent, not whatever was left in the module table ---- */
+static int test_unregistered_module_skipped(void) {
+  const char *dir = getenv("TEST_DIR");
+  if (dir == NULL) return 2;
+  mkdir(dir, 0700);
+
+  const char *names[3] = { "broken_a.so", "broken_b.so", "working.so" };
+  for (int i = 0; i < 3; i++) {
+    snprintf(module_paths[i], PATH_MAX, "%s/%s", dir, names[i]);
+    FILE *f = fopen(module_paths[i], "w");
+    if (f == NULL) return 2;
+    fclose(f);
+  }
+
+  poison_malloc = true;
+  bool loaded = load_modules_only();
+  poison_malloc = false;
+  if (!loaded || zygisk_module_length != 1) return 2;
+
+  /* in a child: calling a stale function pointer crashes it */
+  pid_t pid = fork();
+  if (pid == 0) {
+    struct app_specialize_args_v5 args;
+    memset(&args, 0, sizeof(args));
+    struct zygisk_context ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.args.app = &args;
+    FLAG_SET(&ctx, APP_SPECIALIZE);
+
+    rz_run_modules_pre(&ctx);
+    rz_run_modules_post(&ctx);
+
+    _exit(0);
+  }
+
+  int status = 0;
+  waitpid(pid, &status, 0);
+  if (WIFEXITED(status) && WEXITSTATUS(status) == 0) return 0;
+
+  printf("specializing with an unregistered module ended the process: status 0x%x\n", status);
 
   return 1;
 }
@@ -192,6 +265,7 @@ int main(int argc, char **argv) {
   setvbuf(stdout, NULL, _IONBF, 0);
 
   if (strcmp(argv[1], "remove_failed_modules") == 0) return test_remove_failed_modules();
+  if (strcmp(argv[1], "unregistered_module_skipped") == 0) return test_unregistered_module_skipped();
   if (strcmp(argv[1], "jni_table_full") == 0) return test_jni_table_full();
   if (strcmp(argv[1], "register_table_race") == 0) return table_race(false);
   if (strcmp(argv[1], "exclude_table_race") == 0) return table_race(true);

@@ -1111,7 +1111,7 @@ static bool load_modules_only(void) {
     return false;
   }
 
-  zygisk_modules = (struct rezygisk_module *)malloc(ms.modules_count * sizeof(struct rezygisk_module));
+  zygisk_modules = (struct rezygisk_module *)calloc(ms.modules_count, sizeof(struct rezygisk_module));
   if (!zygisk_modules) {
     LOGE("Failed to allocate memory for modules");
 
