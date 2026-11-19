@@ -827,6 +827,13 @@ int save_mns_fd(int pid, enum MountNamespaceState mns_state, struct root_impl im
   static int clean_namespace_fd = -1;
   static int mounted_namespace_fd = -1;
 
+  /* INFO: Any other state from a client would open an fd that is never cached nor closed */
+  if (mns_state != Clean && mns_state != Mounted) {
+    errno = EINVAL;
+
+    return -1;
+  }
+
   if (mns_state == Clean && clean_namespace_fd != -1) return clean_namespace_fd;
   if (mns_state == Mounted && mounted_namespace_fd != -1) return mounted_namespace_fd;
 

@@ -223,6 +223,19 @@ static int test_clean_ns_failure_reaps_child(void) {
 
 /* a successful save_mns_fd(Mounted) logs no error (LOGx used without
    braces under an if must stay a single statement) */
+/* a state that is neither Clean nor Mounted is refused before any work:
+   such an fd would be cached nowhere and never closed */
+static int test_mns_unknown_state_refused(void) {
+  struct root_impl impl = { .impl = Magisk, .variant = 0 };
+  errno = 0;
+  int ns_fd = save_mns_fd(getpid(), (enum MountNamespaceState)2, impl);
+  if (ns_fd == -1 && errno == EINVAL) return 0;
+
+  printf("save_mns_fd(state 2) returned %d, errno %d\n", ns_fd, errno);
+
+  return 1;
+}
+
 static int test_mounted_ns_logs_no_error(void) {
   if (make_test_dir() == -1) return 2;
 
@@ -389,6 +402,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "exec_child_hangs") == 0) return exec_timeout("echo $$ > child.pid; exec sleep 30", false, NULL);
   if (strcmp(argv[1], "exec_child_hangs_after_closing") == 0) return exec_timeout("echo $$ > child.pid; exec >&-; exec sleep 30", false, NULL);
   if (strcmp(argv[1], "clean_ns_failure_reaps_child") == 0) return test_clean_ns_failure_reaps_child();
+  if (strcmp(argv[1], "mns_unknown_state_refused") == 0) return test_mns_unknown_state_refused();
   if (strcmp(argv[1], "mounted_ns_logs_no_error") == 0) return test_mounted_ns_logs_no_error();
 
   return 2;
