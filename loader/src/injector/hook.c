@@ -1236,7 +1236,7 @@ static void rz_app_specialize_pre(struct zygisk_context *ctx) {
              any area.
   */
   uid_t uid = *ctx->args.app->uid;
-  if (IS_ISOLATED_SERVICE(uid) && ctx->args.app->app_data_dir) {
+  if (IS_ISOLATED_SERVICE(uid) && ctx->args.app->app_data_dir && *ctx->args.app->app_data_dir) {
     /* INFO: If the app is an isolated service, we use the UID of the
                app's process data directory, which is the UID of the
                app itself, which root implementations actually use.

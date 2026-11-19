@@ -573,13 +573,15 @@ if [ -f "$R/loader/src/external/csoloader/include/csoloader.h" ] && [ -f "$R/loa
   c_build hook "$R/tests/c/hook_test.c" -I"$R/loader/src/injector" -I"$R/loader/src/external/csoloader/include" -I"$R/loader/src/external/plti/src"
   c_test hook remove_failed_modules "loader: modules that fail to load are removed from zygiskd by their current index"
   c_test hook unregistered_module_skipped "loader: a module that never registers has no specialize hooks called (no stale table memory)"
+  c_test hook isolated_without_data_dir "loader: an isolated service without an app data dir is specialized without reading a null string"
   c_test hook jni_table_full "loader: a JNI method beyond the 32-entry hook table is reported as not hooked"
   c_test hook register_table_race "loader: plt hook registration cannot overflow its table between check and lock"
   c_test hook exclude_table_race "loader: plt hook exclusion cannot overflow its table between check and lock"
 else
-  CC_SKIPPED=$((CC_SKIPPED + 5))
+  CC_SKIPPED=$((CC_SKIPPED + 6))
   skip "loader: modules that fail to load are removed from zygiskd by their current index" "submodules not checked out (git submodule update --init)"
   skip "loader: a module that never registers has no specialize hooks called (no stale table memory)" "submodules not checked out (git submodule update --init)"
+  skip "loader: an isolated service without an app data dir is specialized without reading a null string" "submodules not checked out (git submodule update --init)"
   skip "loader: a JNI method beyond the 32-entry hook table is reported as not hooked" "submodules not checked out (git submodule update --init)"
   skip "loader: plt hook registration cannot overflow its table between check and lock" "submodules not checked out (git submodule update --init)"
   skip "loader: plt hook exclusion cannot overflow its table between check and lock" "submodules not checked out (git submodule update --init)"

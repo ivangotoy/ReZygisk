@@ -54,7 +54,8 @@ bool plti_deinit(struct plti *c) { (void)c; return true; }
 bool plti_add_lib(struct plti *c, const char *l) { (void)c; (void)l; return false; }
 int parse_int(const char *s) { return atoi(s); }
 bool rezygiskd_update_mns(enum mount_namespace_state s, char *b, size_t n) { (void)s; (void)b; (void)n; return false; }
-uint32_t rezygiskd_get_process_flags(uid_t u, const char *const p) { (void)u; (void)p; return 0; }
+static int flags_requests = 0;
+uint32_t rezygiskd_get_process_flags(uid_t u, const char *const p) { (void)u; (void)p; flags_requests++; return 0; }
 int rezygiskd_get_module_dir(size_t i) { (void)i; return -1; }
 int rezygiskd_connect_companion(size_t i) { (void)i; return -1; }
 const char *read_std_string(const void *p) { (void)p; return ""; }
@@ -167,6 +168,53 @@ static int test_unregistered_module_skipped(void) {
   return 1;
 }
 
+/* ---- an isolated service without an app data dir (null jstring) ---- */
+/* ART aborts the process when GetStringUTFChars gets a null string */
+static const char *t_get_string_utf_chars(JNIEnv *env, jstring s, jboolean *copy) {
+  (void)env; (void)copy;
+  if (s == NULL) _exit(4);
+
+  return "/data/user/0/com.example.app";
+}
+static void t_release_string_utf_chars(JNIEnv *env, jstring s, const char *c) { (void)env; (void)s; (void)c; }
+
+static int test_isolated_without_data_dir(void) {
+  pid_t pid = fork();
+  if (pid == 0) {
+    struct JNINativeInterface table;
+    memset(&table, 0, sizeof(table));
+    table.GetStringUTFChars = t_get_string_utf_chars;
+    table.ReleaseStringUTFChars = t_release_string_utf_chars;
+    JNIEnv env = &table;
+
+    jint uid = 99000;
+    jstring data_dir = NULL;
+    struct app_specialize_args_v5 args;
+    memset(&args, 0, sizeof(args));
+    args.uid = &uid;
+    args.app_data_dir = &data_dir;
+
+    struct zygisk_context ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.env = &env;
+    ctx.args.app = &args;
+    ctx.process = "com.example.app:isolated";
+
+    rz_app_specialize_pre(&ctx);
+
+    /* the process is still specialized: its flags were asked for */
+    _exit(flags_requests == 1 ? 0 : 5);
+  }
+
+  int status = 0;
+  waitpid(pid, &status, 0);
+  if (WIFEXITED(status) && WEXITSTATUS(status) == 0) return 0;
+
+  printf("isolated service without a data dir: status 0x%x (0x400: null string read, 0x500: no flags request)\n", status);
+
+  return 1;
+}
+
 /* ---- JNI hooks (R15 :432): more methods than the 32-entry table ---- */
 #define NMETHODS 33
 static void *orig_fns[NMETHODS];
@@ -266,6 +314,7 @@ int main(int argc, char **argv) {
 
   if (strcmp(argv[1], "remove_failed_modules") == 0) return test_remove_failed_modules();
   if (strcmp(argv[1], "unregistered_module_skipped") == 0) return test_unregistered_module_skipped();
+  if (strcmp(argv[1], "isolated_without_data_dir") == 0) return test_isolated_without_data_dir();
   if (strcmp(argv[1], "jni_table_full") == 0) return test_jni_table_full();
   if (strcmp(argv[1], "register_table_race") == 0) return table_race(false);
   if (strcmp(argv[1], "exclude_table_race") == 0) return table_race(true);
