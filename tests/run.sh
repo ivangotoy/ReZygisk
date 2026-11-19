@@ -507,6 +507,8 @@ c_test monitor pre_section_keeps_key "monitor: lines before the description neve
 c_test monitor prop_rewrite_exact "monitor: status rewrite changes only the description, keeps updateJson and mode"
 c_test monitor prop_write_failure_keeps_old "monitor: failed module.prop write leaves the old file intact"
 c_test monitor status_text_bounded "monitor: long daemon error text stays inside the status text"
+c_test monitor status_text_utf8_whole "monitor: a status text cut at its limit never splits a UTF-8 character"
+c_test monitor description_utf8_whole "monitor: a description shortened for the lines after it never splits a UTF-8 character"
 c_test monitor state_json_escapes "monitor: strings in state.json are JSON-escaped"
 c_test monitor state_json_write_failure_keeps_old "monitor: failed state.json write leaves the old file intact"
 c_test monitor sigchld_echild_tracing "monitor: SIGCHLD with no child left does not spin on waitpid"

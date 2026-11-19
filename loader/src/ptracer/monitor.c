@@ -1082,9 +1082,21 @@ static void append_section(char *section, size_t size, const char *text) {
   strcat(section, text);
 }
 
+/* INFO: len cut to at most max bytes, never inside a UTF-8 character: the cut
+           moves back over up to 3 continuation bytes (bytes that are not
+           UTF-8 are cut at max) */
+static size_t utf8_cut(const char *text, size_t len, size_t max) {
+  if (len <= max) return len;
+
+  size_t cut = max;
+  while (cut > 0 && max - cut < 3 && ((unsigned char)text[cut] & 0xC0) == 0x80) cut--;
+
+  return ((unsigned char)text[cut] & 0xC0) == 0x80 ? max : cut;
+}
+
 /* INFO: Appends as much of the text as fits */
 static void append_truncated(char *section, size_t size, const char *text) {
-  strncat(section, text, size - 1 - strlen(section));
+  strncat(section, text, utf8_cut(text, strlen(text), size - 1 - strlen(section)));
 }
 
 static bool prepare_environment() {
@@ -1137,7 +1149,7 @@ static bool prepare_environment() {
   if (found_description) {
     size_t description_len = strcspn(description, "\n");
     size_t room = sizeof(post_section) - 1 - strlen(after) - (description_newline ? 1 : 0);
-    if (description_len > room) description_len = room;
+    description_len = utf8_cut(description, description_len, room);
 
     snprintf(post_section, sizeof(post_section), "%.*s%s%s", (int)description_len, description, description_newline ? "\n" : "", after);
   }

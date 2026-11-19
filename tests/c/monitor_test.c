@@ -516,6 +516,105 @@ static int test_status_text_bounded(void) {
   return 1;
 }
 
+/* every byte sequence is a whole UTF-8 character */
+static int utf8_valid(const char *text) {
+  const unsigned char *s = (const unsigned char *)text;
+  while (*s) {
+    int n = *s < 0x80 ? 0 : (*s & 0xE0) == 0xC0 ? 1 : (*s & 0xF0) == 0xE0 ? 2 : (*s & 0xF8) == 0xF0 ? 3 : -1;
+    if (n < 0) return 0;
+    s++;
+    for (int i = 0; i < n; i++, s++) {
+      if ((*s & 0xC0) != 0x80) return 0;
+    }
+  }
+
+  return 1;
+}
+
+/* a daemon error text of two-byte characters cut by the status text
+   limit: module.prop stays valid UTF-8 (both offsets, one of them puts
+   a character across the limit) */
+static int test_status_text_utf8_whole(void) {
+  for (int shift = 0; shift < 2; shift++) {
+    if (write_prop(PROP_FIXTURE) == -1) return 2;
+
+    pid_t pid = fork();
+    if (pid == 0) {
+      if (!prepare_environment()) _exit(2);
+
+      static char error_info[402];
+      size_t n = 0;
+      if (shift) error_info[n++] = 'a';
+      for (int i = 0; i < 200; i++) { error_info[n++] = (char)0xc3; error_info[n++] = (char)0xa9; }
+      error_info[n] = '\0';
+      status64.supported = true;
+      status64.daemon_running = false;
+      status64.daemon_error_info = error_info;
+
+      update_status(NULL);
+
+      _exit(0);
+    }
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) return 2;
+
+    char got[4096];
+    if (read_file(prop_path, got, sizeof(got)) == -1) return 2;
+    if (strstr(got, "description=[") == NULL) return 2;
+
+    if (!utf8_valid(got)) {
+      printf("shift %d: module.prop is not valid UTF-8:\n%s\n", shift, got);
+
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+/* a description of two-byte characters shortened to make room for the
+   lines after it: post_section stays valid UTF-8 (both offsets) */
+static int test_description_utf8_whole(void) {
+  for (int shift = 0; shift < 2; shift++) {
+    char content[4096], desc[202], pad[901];
+    size_t n = 0;
+    if (shift) desc[n++] = 'a';
+    for (int i = 0; i < 100; i++) { desc[n++] = (char)0xc3; desc[n++] = (char)0xa9; }
+    desc[n] = '\0';
+    const char *update = "updateJson=https://example.invalid/update.json\n";
+    /* lines after the description: 900 bytes, room for 122 description bytes */
+    size_t pad_len = 900 - strlen(update) - strlen("pad=") - 1;
+    memset(pad, 'x', pad_len); pad[pad_len] = '\0';
+    snprintf(content, sizeof(content), "id=rezygisk\ndescription=%s\n%spad=%s\n", desc, update, pad);
+    if (write_prop(content) == -1) return 2;
+
+    pid_t pid = fork();
+    if (pid == 0) {
+      if (!prepare_environment()) _exit(2);
+
+      /* the description was shortened */
+      if (strlen(post_section) >= strlen(desc) + 1 + 900) _exit(2);
+
+      if (!utf8_valid(post_section)) {
+        printf("shift %d: post_section is not valid UTF-8: %.130s\n", shift, post_section);
+
+        _exit(1);
+      }
+
+      _exit(0);
+    }
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+    if (!WIFEXITED(status)) return 2;
+    if (WEXITSTATUS(status) != 0) return WEXITSTATUS(status);
+  }
+
+  return 0;
+}
+
 /* lines after the description that fill post_section exactly: the
    description newline still fits and no kept line is cut */
 static int test_sections_exact_fit(void) {
@@ -989,6 +1088,8 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "prop_rewrite_exact") == 0) return test_prop_rewrite_exact();
   if (strcmp(argv[1], "prop_write_failure_keeps_old") == 0) return test_prop_write_failure_keeps_old();
   if (strcmp(argv[1], "status_text_bounded") == 0) return test_status_text_bounded();
+  if (strcmp(argv[1], "status_text_utf8_whole") == 0) return test_status_text_utf8_whole();
+  if (strcmp(argv[1], "description_utf8_whole") == 0) return test_description_utf8_whole();
   if (strcmp(argv[1], "state_json_escapes") == 0) return test_state_json_escapes();
   if (strcmp(argv[1], "state_json_write_failure_keeps_old") == 0) return test_state_json_write_failure_keeps_old();
   if (strcmp(argv[1], "sigchld_echild_tracing") == 0) return test_sigchld_echild_tracing();
