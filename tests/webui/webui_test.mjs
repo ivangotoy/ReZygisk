@@ -4,6 +4,7 @@
 // package.json marking them as ES modules) and imported with browser
 // and KernelSU stand-ins: ksu.exec records every command it is given.
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -29,6 +30,9 @@ const handlers = {}
 const commands = []
 let stateJson = '{}'
 let moduleNamesStdout = ''
+// when set, the module name command runs under sh with /data/adb/modules
+// and /system/bin mapped into the scratch dir and PATH
+let moduleNamesShell = false
 let failing = null
 
 globalThis.window = new Proxy({
@@ -66,7 +70,10 @@ globalThis.fetch = async (url) => {
 globalThis.ksu = {
   exec: (command, options, callback) => {
     commands.push(command)
-    const stdout = command.includes('state.json') ? stateJson : command.includes('module.prop') ? moduleNamesStdout : ''
+    let stdout = command.includes('state.json') ? stateJson : command.includes('module.prop') ? moduleNamesStdout : ''
+    if (moduleNamesShell && command.includes('module.prop')) {
+      stdout = execFileSync('sh', ['-c', command.replaceAll('/data/adb/modules/', `${scratch}/modules/`).replaceAll('/system/bin/', '')]).toString()
+    }
     const errno = failing && command.includes(failing) ? 1 : 0
     setTimeout(() => globalThis[callback](errno, errno ? '' : stdout, ''), 0)
   },
@@ -78,7 +85,6 @@ const pageLoader = await import(pathToFileURL(join(web, 'js', 'pages', 'pageLoad
 const settle = () => new Promise((resolve) => setTimeout(resolve, 50))
 
 // sh -c on the command, with the redirect target swapped for a file in the scratch dir
-const { execFileSync } = await import('node:child_process')
 const runShell = (command, out) => execFileSync('sh', ['-c', command.replace('/data/adb/rezygisk/webui_error.log', out)])
 
 function fail(message) {
@@ -138,14 +144,35 @@ switch (testCase) {
     if (!command) fail('no module name command')
     if (command.includes('pwned') || !command.includes('/data/adb/modules/example_module/module.prop') ||
         !command.includes('/data/adb/modules/other.module-2/module.prop')) fail(`command: ${command}`)
-    // one name slot per module, in order: each slot ends with printf "\n"
-    const slots = command.split('printf "\\n"').length - 1
-    if (slots !== 3) fail(`${slots} name slots for 3 modules: ${command}`)
+    break
+  }
+  case 'module_names_in_order': {
+    // each module shows its own name; a module without one shows its id
+    const props = {
+      noname_mod: 'id=noname_mod\n',
+      named_mod: 'id=named_mod\nname=Named Module\n',
+      'other.module-2': 'id=other.module-2\nname=Other\nname=Second\n'
+    }
+    for (const [id, prop] of Object.entries(props)) {
+      mkdirSync(join(scratch, 'modules', id), { recursive: true })
+      writeFileSync(join(scratch, 'modules', id, 'module.prop'), prop)
+    }
+    const ids = ['noname_mod', 'named_mod', 'bad"id', 'missing_mod', 'other.module-2']
+    stateJson = JSON.stringify({ rezygiskd: { 64: { modules: ids } } })
+    moduleNamesShell = true
+    const modules = await import(pathToFileURL(join(web, 'js', 'pages', 'modules', 'index.js')))
+    await modules.loadOnceView()
+    await settle()
+
+    const html = elements.modules_list ? elements.modules_list.innerHTML : ''
+    const shown = [...html.matchAll(/font-size: 1\.1em;">([^<]*)</g)].map((m) => m[1])
+    const want = ['noname_mod', 'Named Module', 'bad&quot;id', 'missing_mod', 'Other']
+    if (JSON.stringify(shown) !== JSON.stringify(want)) fail(`shown:    ${JSON.stringify(shown)}\nexpected: ${JSON.stringify(want)}`)
     break
   }
   case 'module_names_escaped': {
     stateJson = JSON.stringify({ rezygiskd: { 64: { modules: ['example_module'] } } })
-    moduleNamesStdout = `<img src=x onerror="ksu.exec('reboot')"> & Example`
+    moduleNamesStdout = `N:<img src=x onerror="ksu.exec('reboot')"> & Example\n`
     const modules = await import(pathToFileURL(join(web, 'js', 'pages', 'modules', 'index.js')))
     await modules.loadOnceView()
     await settle()

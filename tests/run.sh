@@ -626,6 +626,7 @@ node_test error_log_no_error_object "WebUI: an error event without an error obje
 node_test rejection_log_literal "WebUI: rejection reason reaches the log file literally, never as shell code"
 node_test module_ids_validated "WebUI: module ids outside the module id charset never reach the shell"
 node_test credit_link_quoted "WebUI: a credit link reaches am start as one quoted word"
+node_test module_names_in_order "WebUI: each module shows its own name, also next to modules without one"
 node_test module_names_escaped "WebUI: module names are shown as text, not parsed as HTML"
 node_test modules_state_unreadable "WebUI: the modules page survives an unreadable state.json"
 node_test modules_names_unreadable "WebUI: the modules page lists modules when their names cannot be read"

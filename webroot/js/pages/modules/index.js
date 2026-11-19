@@ -28,13 +28,14 @@ function escapeHtml(text) {
 const moduleIdRegex = /^[a-zA-Z][a-zA-Z0-9._-]+$/
 
 async function _getModuleNames(modules) {
+  /* INFO: Exactly one "N:<name>" line per module, in module order (empty name
+             when it has none), so every name lands on its own module */
   const fullCommand = modules.map((mod) => {
-    /* INFO: Same output as a module without module.prop, so names stay in module order */
-    if (!moduleIdRegex.test(mod.id)) return `printf % ; true ; printf "\\n"`
+    if (!moduleIdRegex.test(mod.id)) return `printf 'N:\\n'`
 
     const propPath = `/data/adb/modules/${mod.id}/module.prop`
 
-    return `printf % ; if test -f "${propPath}"; then /system/bin/grep '^name=' "${propPath}" | /system/bin/cut -d '=' -f 2- 2>/dev/null || true; else true; fi ; printf "\\n"`
+    return `printf 'N:%s\\n' "$(/system/bin/grep -m 1 '^name=' "${propPath}" 2>/dev/null | /system/bin/cut -d '=' -f 2-)"`
   }).join(' ; ')
 
   const result = await exec(fullCommand)
@@ -44,7 +45,7 @@ async function _getModuleNames(modules) {
     return null
   }
 
-  return result.stdout.split('\n\n')
+  return result.stdout.split('\n').filter((line) => line.startsWith('N:')).map((line) => line.slice(2))
 }
 
 async function _updateDynamicElement() {
