@@ -33,7 +33,8 @@ export async function loadOnce() {
     return;
   }
 
-  const langList = langListCmd.stdout.split('\n')
+  /* INFO: ls ends its list with a newline: no empty entry */
+  const langList = langListCmd.stdout.split('\n').filter((langFile) => langFile !== '')
   if (langList.length === 0) {
     toast('No languages found!')
 
@@ -48,6 +49,8 @@ export async function loadOnceView() {
   for (let i = 0; i < availableLanguages.length; i++) {
     const langCode = availableLanguages[i]
     const langData = await _getLanguageData(langCode)
+    /* INFO: A file that cannot be read or parsed (or no list yet) gets no card */
+    if (!langData) continue
 
     lang_list_buf.push(`
       <div lang-data="${langCode}" class="dim card card_animation" style="padding: 20px 15px; cursor: pointer;">

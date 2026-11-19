@@ -33,6 +33,9 @@ let moduleNamesStdout = ''
 // when set, the module name command runs under sh with /data/adb/modules
 // and /system/bin mapped into the scratch dir and PATH
 let moduleNamesShell = false
+// stdout of the language list (ls of webroot/lang), and the toasts shown
+let langListStdout = ''
+const toasts = []
 let failing = null
 
 globalThis.window = new Proxy({
@@ -75,14 +78,15 @@ globalThis.fetch = async (url) => {
 globalThis.ksu = {
   exec: (command, options, callback) => {
     commands.push(command)
-    let stdout = command.includes('state.json') ? stateJson : command.includes('module.prop') ? moduleNamesStdout : ''
+    let stdout = command.includes('state.json') ? stateJson : command.includes('module.prop') ? moduleNamesStdout :
+      command.includes('webroot/lang') ? langListStdout : ''
     if (moduleNamesShell && command.includes('module.prop')) {
       stdout = execFileSync('sh', ['-c', command.replaceAll('/data/adb/modules/', `${scratch}/modules/`).replaceAll('/system/bin/', '')]).toString()
     }
     const errno = failing && command.includes(failing) ? 1 : 0
     setTimeout(() => globalThis[callback](errno, errno ? '' : stdout, ''), 0)
   },
-  toast: () => {},
+  toast: (message) => { toasts.push(message) },
   fullScreen: () => {}
 }
 
@@ -229,6 +233,29 @@ switch (testCase) {
         if (ran !== `${installed[0]} ${want}`) fail(`${button} with zygisk-ptrace ${installed.join(', ')} installed ran: ${JSON.stringify(ran)} (command: ${command})`)
       }
     }
+    break
+  }
+  case 'language_list_cards': {
+    // ls ends its list with a newline, and one file cannot be parsed: one card per readable language
+    writeFileSync(join(web, 'lang', 'broken.json'), '{ not json')
+    langListStdout = 'en_US.json\nbroken.json\n'
+    const lang = await import(pathToFileURL(join(web, 'js', 'pages', 'settings', 'minipage', 'language', 'index.js')))
+    await lang.loadOnce()
+    await lang.loadOnceView()
+    const html = elements.lang_list ? elements.lang_list.innerHTML : ''
+    const shown = [...html.matchAll(/font-size: 1\.1em;">([^<]*)</g)].map((m) => m[1])
+    const want = [JSON.parse(readFileSync(join(web, 'lang', 'en_US.json'), 'utf8')).langName]
+    if (JSON.stringify(shown) !== JSON.stringify(want)) fail(`cards:    ${JSON.stringify(shown)}\nexpected: ${JSON.stringify(want)}`)
+    break
+  }
+  case 'language_list_empty': {
+    // an empty language dir is reported and shows no card
+    langListStdout = ''
+    const lang = await import(pathToFileURL(join(web, 'js', 'pages', 'settings', 'minipage', 'language', 'index.js')))
+    await lang.loadOnce()
+    await lang.loadOnceView()
+    const html = elements.lang_list ? elements.lang_list.innerHTML : ''
+    if (!toasts.includes('No languages found!') || html.includes('font-size')) fail(`toasts: ${JSON.stringify(toasts)}\nlang_list: ${html}`)
     break
   }
   case 'modules_state_unreadable': {
