@@ -200,7 +200,9 @@ void rezygiskd_get_info(struct rezygisk_info *info) {
       if (strncmp(line, "name=", strlen("name=")) != 0) continue;
 
       size_t name_len = strlen(line + strlen("name="));
-      if (name_len == 0 || line[name_len + strlen("name=") - 1] != '\n') {
+      /* INFO: The last line of the file may end without a newline */
+      bool ends_file = name_len > 0 && line[name_len + strlen("name=") - 1] != '\n' && feof(module_prop);
+      if (name_len == 0 || (line[name_len + strlen("name=") - 1] != '\n' && !ends_file)) {
         LOGE("Invalid module name in %s", module_path);
 
         fclose(module_prop);
@@ -208,7 +210,7 @@ void rezygiskd_get_info(struct rezygisk_info *info) {
         goto info_cleanup;
       }
 
-      info->modules.modules[i] = strndup(line + strlen("name="), name_len - 1);
+      info->modules.modules[i] = strndup(line + strlen("name="), ends_file ? name_len : name_len - 1);
       if (info->modules.modules[i] == NULL) {
         PLOGE("allocate memory for module name from %s", module_path);
 

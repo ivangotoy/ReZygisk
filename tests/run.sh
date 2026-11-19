@@ -592,6 +592,8 @@ c_test loader_timeout untimed_socket_waits "loader: read_loop still waits on a s
 
 c_build loader_daemon "$R/tests/c/loader_daemon_test.c" "$R/loader/src/common/socket_utils.c"
 c_test loader_daemon get_info_daemon_down "loader rezygiskd_get_info: daemon down leaves an empty, freeable info"
+c_test loader_daemon get_info_name_at_eof "loader rezygiskd_get_info: a module.prop ending with name= and no newline keeps the module list"
+c_test loader_daemon get_info_name_too_long "loader rezygiskd_get_info: a name line longer than the line buffer is still refused"
 
 c_build loader_socket "$R/tests/c/loader_socket_test.c"
 c_test loader_socket read_string_value "loader read_string: reads a string"
