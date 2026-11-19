@@ -743,7 +743,8 @@ void sigchld_listener_callback() {
           if (get_program(pid, program, sizeof(program)) == -1) {
             LOGW("failed to get program %d", pid);
 
-            continue;
+            /* INFO: Matches no program below: the process is forgotten and detached */
+            program[0] = '\0';
           }
 
           LOGV("%d program %s", pid, program);

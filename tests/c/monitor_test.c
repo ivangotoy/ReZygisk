@@ -73,6 +73,7 @@ static void *t_malloc(size_t size);
 #undef sendto
 
 static bool detach_with_sigstop = false;
+static int plain_detaches = 0;
 
 static ssize_t t_sendto(int fd, const void *buf, size_t len, int flags, const struct sockaddr *addr, socklen_t alen) {
   (void)alen;
@@ -92,6 +93,7 @@ static long t_ptrace(int request, ...) {
     long sig = (long)va_arg(ap, void *);
     va_end(ap);
     if (sig == SIGSTOP) detach_with_sigstop = true;
+    else plain_detaches++;
   }
   if (request == PTRACE_SEIZE) {
     seize_calls++;
@@ -1051,6 +1053,49 @@ static int test_stop_wait_times_out(void) {
   return 1;
 }
 
+/* a traced process at its exec stop whose program cannot be read is
+   detached (resumed) and forgotten, never left stopped */
+static int test_exec_stop_unknown_program(void) {
+  if (write_prop(PROP_FIXTURE) == -1) return 2;
+
+  pid_t child = fork();
+  if (child == 0) {
+    alarm(5);
+    if (!prepare_environment()) _exit(2);
+    if (!sigchld_listener_init()) _exit(2);
+
+    tracing_state = TRACING;
+    test_program = NULL;
+
+    sigchld_process = malloc(sizeof(pid_t));
+    sigchld_process[0] = 5555;
+    sigchld_process_count = 1;
+
+    exited_pid = 5555;
+    exited_status = ((SIGTRAP | (PTRACE_EVENT_EXEC << 8)) << 8) | 0x7f;
+    echild_mode = true;
+    kill(getpid(), SIGCHLD);
+
+    sigchld_listener_callback();
+
+    if (plain_detaches != 1 || sigchld_process[0] != 0) {
+      printf("%d detach(es), slot holds %d\n", plain_detaches, sigchld_process[0]);
+
+      _exit(1);
+    }
+
+    _exit(0);
+  }
+
+  int status = 0;
+  waitpid(child, &status, 0);
+  if (WIFEXITED(status) && WEXITSTATUS(status) == 0) return 0;
+
+  printf("child status 0x%x\n", status);
+
+  return 1;
+}
+
 /* zygisk-ptrace ctl with the monitor's queue full: fails in time */
 static int test_ctl_queue_full(void) {
   alarm(5);
@@ -1115,6 +1160,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "listener_bind_fail_closes") == 0) return test_listener_bind_fail_closes();
 
   if (strcmp(argv[1], "stop_wait_times_out") == 0) return test_stop_wait_times_out();
+  if (strcmp(argv[1], "exec_stop_unknown_program") == 0) return test_exec_stop_unknown_program();
   if (strcmp(argv[1], "ctl_queue_full") == 0) return test_ctl_queue_full();
   return 2;
 }

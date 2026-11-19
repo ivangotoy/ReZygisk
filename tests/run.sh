@@ -522,6 +522,7 @@ c_test monitor status_no_line_injection "monitor: line breaks in the daemon erro
 c_test monitor info_module_count_bounded "monitor: module count larger than the datagram allocates nothing for it"
 c_test monitor ctl_start_seizes "monitor: ctl start seizes init and traces"
 c_test monitor ctl_start_seize_fails "monitor: ctl start stays stopped when init cannot be seized"
+c_test monitor exec_stop_unknown_program "monitor: a process at its exec stop whose program cannot be read is detached, not left stopped"
 
 # monitor waits with a short REZYGISK_TRACE_TIMEOUT_MS
 c_build monitor_timeout "$R/tests/c/monitor_test.c" -DREZYGISK_TRACE_TIMEOUT_MS=200
