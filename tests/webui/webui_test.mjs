@@ -181,6 +181,23 @@ switch (testCase) {
     if (!html.includes('&lt;img src=x onerror=&quot;ksu.exec(&#39;reboot&#39;)&quot;&gt; &amp; Example') || html.includes('<img')) fail(`modules_list: ${html}`)
     break
   }
+  case 'home_zygote64_not_injected': {
+    // a 64-bit zygote the monitor reports as not injected is shown as such
+    stateJson = JSON.stringify({ root: 'Magisk', monitor: { state: '0' }, rezygiskd: { 64: { state: 1, modules: [] } }, zygote: { 64: 0 } })
+    // the browser exposes elements with an id as globals
+    globalThis.loading_screen = { style: {} }
+    const home = await import(pathToFileURL(join(web, 'js', 'pages', 'home', 'index.js')))
+    rejections.length = 0
+    await home.loadOnceView()
+    await settle()
+    if (rejections.length) fail(`page update failed: ${rejections[0]}`)
+
+    const strings = JSON.parse(readFileSync(join(web, 'lang', 'en_US.json'), 'utf8'))
+    const want = strings.pages.home.info.zygote.notInjected
+    const got = elements.zygote64_status ? elements.zygote64_status.innerHTML : ''
+    if (got !== want) fail(`zygote64 status: ${JSON.stringify(got)}, expected ${JSON.stringify(want)}`)
+    break
+  }
   case 'modules_state_unreadable': {
     failing = 'state.json'
     const modules = await import(pathToFileURL(join(web, 'js', 'pages', 'modules', 'index.js')))
