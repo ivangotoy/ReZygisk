@@ -1,6 +1,6 @@
 {
-  "version": "v1.0.0 (645-ae3f497-release)-ci3",
-  "versionCode": 645,
-  "zipUrl": "https://git.digtvbg.com/ivangotoy/ReZygisk/releases/download/v1.0.0-645-ae3f497-release-ci3/ReZygisk-v1.0.0-645-ae3f497-release-ci3.zip",
-  "changelog": "https://git.digtvbg.com/ivangotoy/ReZygisk/raw/commit/ae3f497eb0da3c0ff3de39787764002e0d377e14/README.md"
+  "version": "v1.0.0 (666-2e526cc-release)-ci4",
+  "versionCode": 666,
+  "zipUrl": "https://git.digtvbg.com/ivangotoy/ReZygisk/releases/download/v1.0.0-666-2e526cc-release-ci4/ReZygisk-v1.0.0-666-2e526cc-release-ci4.zip",
+  "changelog": "https://git.digtvbg.com/ivangotoy/ReZygisk/raw/commit/2e526ccd575d6cdd28ef46ef087aa849cd4395f4/README.md"
 }
