@@ -110,6 +110,15 @@ else
   ok "only module-ci.sh mentions $S outside tests/"
 fi
 
+# one release run at a time: a top-level concurrency group that does not cancel the running one
+# (read without PyYAML, so the check never skips where sed runs)
+wf_conc=$(sed -n '/^concurrency:$/,/^[^ #]/p' "$WF")
+if printf '%s\n' "$wf_conc" | grep -qx '  group: module-release' && printf '%s\n' "$wf_conc" | grep -qx '  cancel-in-progress: false'; then
+  ok "workflow: release runs share one concurrency group, none cancelled"
+else
+  bad "workflow: release runs share one concurrency group, none cancelled" "$wf_conc"
+fi
+
 echo "== README dependencies"
 # The build tools the Makefile runs and the third-party modules sign.py
 # imports must be listed in README.md's Dependencies section.

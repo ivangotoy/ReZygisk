@@ -6,6 +6,11 @@ name: module-release
 on:
   workflow_dispatch:
 
+# one release at a time: two would read the same last versionCode and both push update.json
+concurrency:
+  group: module-release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: kernelsu-ci
