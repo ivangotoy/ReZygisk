@@ -551,7 +551,7 @@ static int test_exempt_fd_result(void) {
   return bad;
 }
 
-/* an API v1-v3 hook by path regex: the matching library is handed to
+/* an API v1-v3 hook by path regex (here every library): each matching library is handed to
    PLTI (at its ELF header) before the hook, so the commit succeeds */
 static int test_plt_commit_registers_library(void) {
   static struct zygisk_context ctx;
@@ -560,7 +560,7 @@ static int test_plt_commit_registers_library(void) {
   g_ctx = &ctx;
   zygisk_module_length = 0;
 
-  api_plt_hook_register(".*/libc[.-][^/]*$", "open", (void *)cb, NULL);
+  api_plt_hook_register(".*", "open", (void *)cb, NULL);
   if (ctx.register_info_count != 1) return 2;
 
   bool ok = api_plt_hook_commit();
