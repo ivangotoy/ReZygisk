@@ -9,6 +9,43 @@ fi
 
 cd "$MODDIR"
 
+create_sys_perm() {
+  mkdir -p $1
+  chmod 555 $1
+  chcon u:object_r:system_file:s0 $1
+}
+
+export TMP_PATH=/data/adb/rezygisk
+rm -rf "$TMP_PATH"
+
+create_sys_perm $TMP_PATH
+
+# INFO: We need to cleanup the module.prop to its default state before ReZygisk writes to it
+#         so that it never duplicates the module status in there.
+cp "$MODDIR/module.prop.bak" "$MODDIR/module.prop"
+
+# INFO: Utilize the one with the biggest output, as some devices with Tango have the full list
+#         in ro.product.cpu.abilist but others only have a subset there, and the full list in
+#         ro.system.product.cpu.abilist
+CPU_ABIS_PROP1=$(getprop ro.system.product.cpu.abilist)
+CPU_ABIS_PROP2=$(getprop ro.product.cpu.abilist)
+
+if [ "${#CPU_ABIS_PROP2}" -gt "${#CPU_ABIS_PROP1}" ]; then
+  CPU_ABIS=$CPU_ABIS_PROP2
+else
+  CPU_ABIS=$CPU_ABIS_PROP1
+fi
+
+if [[ "$CPU_ABIS" == *"arm64-v8a"* || "$CPU_ABIS" == *"x86_64"* ]]; then
+  ./bin/zygisk-ptrace64 monitor &
+else
+  # INFO: Device is 32-bit only
+
+  ./bin/zygisk-ptrace32 monitor &
+fi
+
+# INFO: Other Zygisk modules' scripts run after the monitor is up, so that a slow one cannot
+#         let zygote start before ReZygisk traces init
 if [ "$(which magisk)" ]; then
   # INFO: A module script still running after the limit is left running in the
   #         background (never killed) and the next one starts. The watchdog's
@@ -44,41 +81,6 @@ if [ "$(which magisk)" ]; then
       fi
     fi
   done
-fi
-
-create_sys_perm() {
-  mkdir -p $1
-  chmod 555 $1
-  chcon u:object_r:system_file:s0 $1
-}
-
-export TMP_PATH=/data/adb/rezygisk
-rm -rf "$TMP_PATH"
-
-create_sys_perm $TMP_PATH
-
-# INFO: We need to cleanup the module.prop to its default state before ReZygisk writes to it
-#         so that it never duplicates the module status in there.
-cp "$MODDIR/module.prop.bak" "$MODDIR/module.prop"
-
-# INFO: Utilize the one with the biggest output, as some devices with Tango have the full list
-#         in ro.product.cpu.abilist but others only have a subset there, and the full list in
-#         ro.system.product.cpu.abilist
-CPU_ABIS_PROP1=$(getprop ro.system.product.cpu.abilist)
-CPU_ABIS_PROP2=$(getprop ro.product.cpu.abilist)
-
-if [ "${#CPU_ABIS_PROP2}" -gt "${#CPU_ABIS_PROP1}" ]; then
-  CPU_ABIS=$CPU_ABIS_PROP2
-else
-  CPU_ABIS=$CPU_ABIS_PROP1
-fi
-
-if [[ "$CPU_ABIS" == *"arm64-v8a"* || "$CPU_ABIS" == *"x86_64"* ]]; then
-  ./bin/zygisk-ptrace64 monitor &
-else
-  # INFO: Device is 32-bit only
-
-  ./bin/zygisk-ptrace32 monitor &
 fi
 
 exit 0

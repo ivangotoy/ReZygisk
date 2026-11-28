@@ -202,6 +202,15 @@ expect_eq "post-fs-data: Magisk exit code" 0 "$?"
 check "post-fs-data: Magisk runs post-fs-data.sh of enabled zygisk modules" test -s "$C/enabled.ran"
 check "post-fs-data: Magisk skips disabled and non-zygisk modules" test ! -e "$C/disabled.ran" -a ! -e "$C/nozygisk.ran"
 
+# under Magisk the monitor is started before the other Zygisk modules' scripts run: the
+# module's script waits up to 2 s for the monitor's marker and records what it saw
+pfd_case pfdorder
+mkdir -p "$C/modules/other/zygisk"
+printf '#!/bin/sh\nn=0; while [ ! -e "%s/launched" ] && [ "$n" -lt 20 ]; do sleep 0.1 2>/dev/null || sleep 1; n=$((n + 1)); done\nif [ -e "%s/launched" ]; then echo after-monitor; else echo before-monitor; fi > "%s/other.ran"\n' "$C" "$C" "$C" > "$C/modules/other/post-fs-data.sh"
+run_pfd TEST_MAGISK=1 TEST_ABILIST=arm64-v8a
+wait_file "$C/other.ran"
+expect_eq "post-fs-data: Magisk starts the monitor before the other modules' scripts" after-monitor "$(cat "$C/other.ran" 2>/dev/null)"
+
 # a module script still running at the limit is left running in the
 # background and the next module and the monitor are not held up
 pfd_case pfdslow
