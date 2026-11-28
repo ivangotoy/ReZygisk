@@ -69,7 +69,8 @@ document.addEventListener('click', async (event) => {
 }, false)
 
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (event) => {
-  if (sys_theme !== 'system') return
+  /* INFO: The theme chosen now, not the one saved when the WebUI opened */
+  if (localStorage.getItem('/ReZygisk/theme') !== 'system') return
 
   const newColorScheme = event.matches ? 'dark' : 'light'
   if (newColorScheme === 'dark') setDark()

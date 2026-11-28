@@ -236,6 +236,29 @@ switch (testCase) {
     }
     break
   }
+  case 'system_theme_follows_choice': {
+    // the WebUI opens with the "system" theme, then dark is chosen: an OS light/dark
+    // switch no longer changes the colors; with "system" chosen again it does
+    const store = { '/ReZygisk/theme': 'system' }
+    globalThis.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v) } }
+    let schemeListener = null
+    window.matchMedia = () => ({ matches: false, addEventListener: (name, fn) => { schemeListener = fn } })
+    const backgrounds = []
+    const plainDocument = globalThis.document
+    globalThis.document = new Proxy({}, {
+      get: (t, p) => (p === 'querySelector' ? () => ({ style: { setProperty: (k, v) => { if (k === '--background') backgrounds.push(v) } } }) : plainDocument[p])
+    })
+    await import(pathToFileURL(join(web, 'js', 'preloader.js')))
+    if (!schemeListener) fail('no prefers-color-scheme listener')
+    store['/ReZygisk/theme'] = 'dark'
+    backgrounds.length = 0
+    schemeListener({ matches: false })
+    if (backgrounds.length !== 0) fail(`dark chosen, OS switched to light: colors set to ${JSON.stringify(backgrounds)}`)
+    store['/ReZygisk/theme'] = 'system'
+    schemeListener({ matches: true })
+    if (!backgrounds.includes('#141414')) fail(`system chosen, OS switched to dark: colors ${JSON.stringify(backgrounds)}`)
+    break
+  }
   case 'actions_listeners_once': {
     // leaving the page drops its listeners (utils.removeAllListeners, as pageLoader does):
     // after three visits one tap runs one command
