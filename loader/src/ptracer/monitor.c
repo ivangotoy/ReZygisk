@@ -783,6 +783,15 @@ void sigchld_listener_callback() {
               if (!STOPPED_WITH(SIGSTOP, 0)) {
                 LOGE("Failed to stop process %d", pid);
 
+                /* INFO: Stopped by another signal first: SIGCONT drops the still pending
+                           SIGSTOP (no stop later with nobody waiting for it) and the
+                           detach hands the other signal back. Not injected. */
+                if (WIFSTOPPED(sigchld_status) && WPTEVENT(sigchld_status) == 0) {
+                  kill(pid, SIGCONT);
+                  ptrace(PTRACE_DETACH, pid, 0, WSTOPSIG(sigchld_status));
+                  sigchld_status = 0;
+                }
+
                 break;
               }
 

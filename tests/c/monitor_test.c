@@ -75,6 +75,7 @@ static void *t_malloc(size_t size);
 
 static bool detach_with_sigstop = false;
 static int plain_detaches = 0;
+static long last_detach_sig = -1;
 
 static ssize_t t_sendto(int fd, const void *buf, size_t len, int flags, const struct sockaddr *addr, socklen_t alen) {
   (void)alen;
@@ -95,6 +96,7 @@ static long t_ptrace(int request, ...) {
     va_end(ap);
     if (sig == SIGSTOP) detach_with_sigstop = true;
     else plain_detaches++;
+    last_detach_sig = sig;
   }
   if (request == PTRACE_SEIZE) {
     seize_calls++;
@@ -125,6 +127,8 @@ static pid_t exited_pid = 0;
 static int exited_status = 1 << 8;
 
 static pid_t hang_pid = 0;
+static pid_t next_status_pid = 0;
+static int next_status = 0;
 
 /* when set, the first waitpid() ends the process with exit code 0 */
 static bool exit_on_waitpid = false;
@@ -143,6 +147,13 @@ static pid_t t_waitpid(pid_t pid, int *status, int options) {
     *status = exited_status;
 
     return ret;
+  }
+  /* the stop reported by a wait for this pid, once */
+  if (next_status_pid != 0 && pid == next_status_pid) {
+    next_status_pid = 0;
+    *status = next_status;
+
+    return pid;
   }
   if (!echild_mode) return waitpid(pid, status, options);
 
@@ -1139,6 +1150,55 @@ static int test_ctl_queue_full(void) {
   return 1;
 }
 
+/* app_process execs, the monitor sends SIGSTOP, but another pending
+   signal (SIGTERM) stops it first: the pending SIGSTOP is dropped
+   (SIGCONT) and the process is detached with SIGTERM handed back, never
+   detached with the SIGSTOP still pending and its signal lost */
+static int test_exec_stop_other_signal(void) {
+  if (write_prop(PROP_FIXTURE) == -1) return 2;
+
+  pid_t child = fork();
+  if (child == -1) return 2;
+  if (child == 0) {
+    alarm(5);
+    if (!prepare_environment()) _exit(2);
+    if (!sigchld_listener_init()) _exit(2);
+
+    tracing_state = TRACING;
+    status64.supported = true;
+    status64.daemon_running = true;
+    status64.daemon_pid = 4242;
+    test_program = "/system/bin/app_process64";
+
+    sigchld_process = malloc(sizeof(pid_t));
+    sigchld_process[0] = 5555;
+    sigchld_process_count = 1;
+
+    exited_pid = 5555;
+    exited_status = ((SIGTRAP | (PTRACE_EVENT_EXEC << 8)) << 8) | 0x7f;
+    next_status_pid = 5555;
+    next_status = (SIGTERM << 8) | 0x7f;
+    echild_mode = true;
+    kill(getpid(), SIGCHLD);
+
+    sigchld_listener_callback();
+
+    if (signals_sent[SIGKILL]) { printf("SIGKILL sent\n"); _exit(1); }
+    if (!signals_sent[SIGCONT]) { printf("pending SIGSTOP not dropped (no SIGCONT)\n"); _exit(1); }
+    if (plain_detaches != 1 || last_detach_sig != SIGTERM) { printf("%d detach(es), last with signal %ld, expected one with SIGTERM\n", plain_detaches, last_detach_sig); _exit(1); }
+
+    _exit(0);
+  }
+
+  int status = 0;
+  if (waitpid(child, &status, 0) != child) return 2;
+  if (WIFEXITED(status) && WEXITSTATUS(status) == 0) return 0;
+
+  printf("child status 0x%x\n", status);
+
+  return 1;
+}
+
 /* init is seized and forks at once: the SIGCHLD reporting its fork stop
    reaches the monitor's loop (waitpid is called), it is not discarded
    leaving init stopped */
@@ -1197,5 +1257,6 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "exec_stop_unknown_program") == 0) return test_exec_stop_unknown_program();
   if (strcmp(argv[1], "ctl_queue_full") == 0) return test_ctl_queue_full();
   if (strcmp(argv[1], "sigchld_before_seize") == 0) return test_sigchld_before_seize();
+  if (strcmp(argv[1], "exec_stop_other_signal") == 0) return test_exec_stop_other_signal();
   return 2;
 }
