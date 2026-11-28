@@ -186,6 +186,7 @@ static int test_idle_longer_than_limit(void) {
   if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1) return 2;
 
   pid_t companion = fork();
+  if (companion == -1) return 2;
   if (companion == 0) {
     alarm(20);
     close(sv[0]);

@@ -36,6 +36,8 @@ static long t_ptrace(int request, ...);
 #define ptrace(...) t_ptrace(__VA_ARGS__)
 static ssize_t t_process_vm_readv(pid_t pid, const struct iovec *l, unsigned long ln, const struct iovec *r, unsigned long rn, unsigned long flags);
 #define process_vm_readv(p, l, ln, r, rn, f) t_process_vm_readv(p, l, ln, r, rn, f)
+/* writes into the made-up tracee pid go nowhere (never into a real process) */
+#define process_vm_writev(p, l, ln, r, rn, f) ((void)(p), (void)(r), (void)(rn), (void)(f), (ssize_t)(ln ? (l)[0].iov_len : 0))
 static struct maps_info empty_maps;
 static bool use_empty_maps = false;
 

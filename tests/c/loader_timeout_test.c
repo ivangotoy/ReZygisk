@@ -94,6 +94,8 @@ static pid_t start_peer(enum peer_mode mode) {
 }
 
 static void stop_peer(pid_t pid) {
+  /* a peer that never started: kill(-1) would signal every process of the user */
+  if (pid <= 0) return;
   kill(pid, SIGKILL);
   waitpid(pid, NULL, 0);
 }

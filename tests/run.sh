@@ -9,6 +9,8 @@ R=$(cd "$(dirname "$0")/.." && pwd)
 W=$(mktemp -d "${TMPDIR:-/tmp}/rezygisk-tests.XXXXXX") || exit 1
 trap 'rm -rf "$W"' EXIT INT TERM
 ORIG_PATH=$PATH
+# the git calls below act on repositories under $W only, never on one named by the caller
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_COMMON_DIR
 PASSED=0 FAILED=0 SKIPPED=0 CC_SKIPPED=0
 
 ok() { PASSED=$((PASSED + 1)); echo "PASS $1"; }

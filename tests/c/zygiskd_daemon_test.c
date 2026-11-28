@@ -305,6 +305,8 @@ static pid_t start_daemon(void) {
   unlink(sock_path);
 
   pid_t daemon = fork();
+  /* no daemon: the callers' kill(daemon) must never become kill(-1) */
+  if (daemon == -1) exit(2);
   if (daemon == 0) {
     alarm(20);
 
