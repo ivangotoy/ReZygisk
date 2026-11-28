@@ -165,7 +165,12 @@ static int test_handshake_never_comes(void) {
 
   int status = 0;
   for (int i = 0; i < 300; i++) {
-    if (waitpid(companion, &status, WNOHANG) == companion) return 0;
+    /* gave up and returned (exit 0), not a crash */
+    if (waitpid(companion, &status, WNOHANG) == companion) {
+      if (WIFEXITED(status) && WEXITSTATUS(status) == 0) return 0;
+      printf("companion ended with status 0x%x\n", status);
+      return 1;
+    }
     usleep(10000);
   }
 

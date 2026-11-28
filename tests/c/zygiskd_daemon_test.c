@@ -344,7 +344,9 @@ static int accept_error(int err, bool should_survive) {
     int status = 0;
     pid_t done = 0;
     for (int i = 0; i < 100 && (done = waitpid(daemon, &status, WNOHANG)) == 0; i++) usleep(50000);
-    if (done == daemon) return 0;
+    /* ended by the failed accept(): a normal exit, not a crash */
+    if (done == daemon && WIFEXITED(status) && WEXITSTATUS(status) == 0) return 0;
+    if (done == daemon) { printf("daemon ended with status 0x%x after accept() failed with %s\n", status, strerror(err)); return 1; }
 
     printf("daemon kept running after accept() failed with %s\n", strerror(err));
   }
@@ -577,7 +579,8 @@ static int gone_client(bool remove_module) {
 
   if (remove_module) {
     size_t count = module_count();
-    if (count == before && before >= 2) result = 0;
+    /* (size_t)-1: the daemon did not answer, which is no pass */
+    if (count == before && before >= 2 && before != (size_t)-1) result = 0;
     else printf("%zu module(s) left, expected %zu\n", count, before);
   } else {
     int fd = connect_daemon();

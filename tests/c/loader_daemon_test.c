@@ -120,7 +120,7 @@ static int get_info_name_at_eof(size_t name_len) {
     result = info.modules.modules_count == 1 && info.modules.modules[0] && strcmp(info.modules.modules[0], name) == 0 ? 0 : 1;
   } else {
     /* longer than the 1023-byte line buffer: still refused */
-    result = info.modules.modules_count == 0 ? 0 : 1;
+    result = info.running && info.modules.modules_count == 0 ? 0 : 1;
   }
   if (result) printf("running %d, %zu module(s), first: %.40s\n", info.running, info.modules.modules_count, info.modules.modules_count ? info.modules.modules[0] : "(none)");
 

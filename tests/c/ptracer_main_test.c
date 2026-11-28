@@ -89,7 +89,18 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "trace_valid_pid") == 0) {
     char *a[] = { "zygisk-ptrace", "trace", "1234", NULL };
 
-    return run(3, a) == 0 ? 0 : 1;
+    /* exit 0 and the pid actually traced, once */
+    pid_t pid = fork();
+    if (pid == -1) return 2;
+    if (pid == 0) _exit(rz_main(3, a) != 0 ? 1 : traced == 1 ? 0 : 3);
+
+    int status = 0;
+    if (waitpid(pid, &status, 0) != pid) return 2;
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0) return 0;
+
+    printf("trace 1234: status 0x%x (0x100: failed, 0x300: not traced once)\n", status);
+
+    return 1;
   }
   if (strcmp(argv[1], "trace_non_numeric_pid") == 0) return bad_pid("abc");
   if (strcmp(argv[1], "trace_trailing_garbage_pid") == 0) return bad_pid("12abc");

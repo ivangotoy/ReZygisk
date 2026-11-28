@@ -326,11 +326,16 @@ static int test_listener_bind_fail_closes(void) {
   mkdir(empty, 0700);
   if (chdir(empty) == -1) return 2;
 
+  /* the socket gets the lowest free fd: check that one, not the variable */
+  int probe = dup(0);
+  if (probe == -1) return 2;
+  close(probe);
+
   /* no rz/ dir: bind fails with ENOENT */
   if (rezygiskd_listener_init()) return 2;
 
-  if (monitor_sock_fd >= 0 && fcntl(monitor_sock_fd, F_GETFD) != -1) {
-    printf("socket fd %d still open after the failed bind\n", monitor_sock_fd);
+  if (fcntl(probe, F_GETFD) != -1) {
+    printf("socket fd %d still open after the failed bind\n", probe);
 
     return 1;
   }
