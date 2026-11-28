@@ -177,6 +177,36 @@ BUILT_VC="$(prop_get versionCode "$REL/built.prop")"
 case "$BUILT_VC" in ''|*[!0-9]*) die "built versionCode '$BUILT_VC' is not a number" ;; esac
 VERSION="$(printf '%s' "$BUILT_VERSION" | sed -E 's/-(fork|ci)[0-9]+$//')-ci$RUN_NUMBER"
 VC=$((BUILT_VC + VERSION_CODE_OFFSET))
+# The manager offers only a versionCode above the one it has: above the update.json on main
+# (this clone's tip) and every published release (the "versionCode N" line of its body; drafts
+# were never offered). Anything unreadable stops the release before it publishes.
+LAST_VC=0
+if git cat-file -e "HEAD:$UPDATE_JSON_PATH" 2>/dev/null; then
+    LAST_VC="$(git show "HEAD:$UPDATE_JSON_PATH" | python3 -I -c 'import json,sys
+v=json.load(sys.stdin)["versionCode"]
+if type(v) is not int or v < 0: sys.exit("versionCode is not a non-negative integer")
+print(v)')" || die "$UPDATE_JSON_PATH on main has no readable versionCode"
+fi
+page=1
+while :; do
+    [ "$page" -le 100 ] || die "release list did not end after 100 pages"
+    list="$(api GET "/releases?limit=50&page=$page")" || die "release list unreadable"
+    read -r n best < <(printf '%s' "$list" | python3 -I -c 'import json,re,sys
+d=json.load(sys.stdin)
+if type(d) is not list: sys.exit("not a list")
+best=0
+for r in d:
+    if r["draft"] is not False: continue
+    for line in (r.get("body") or "").splitlines():
+        m=re.fullmatch(r"versionCode ([0-9]+)", line.strip())
+        if m: best=max(best, int(m.group(1)))
+print(len(d), best)' || echo fail) || true
+    case "${n:-fail}:${best:-x}" in fail:*|*:*[!0-9]*|*:) die "release list unreadable" ;; esac
+    [ "$n" -gt 0 ] || break
+    [ "$best" -le "$LAST_VC" ] || LAST_VC="$best"
+    page=$((page + 1))
+done
+[ "$VC" -gt "$LAST_VC" ] || VC=$((LAST_VC + 1))
 [ "$VC" -ge "$VERSION_CODE_FLOOR" ] || die "versionCode $VC is below the floor $VERSION_CODE_FLOOR"
 TAG="$(printf '%s' "$VERSION" | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/-+/-/g; s/^-//; s/-$//')"
 case "$TAG" in v*) ;; *) TAG="v$TAG" ;; esac

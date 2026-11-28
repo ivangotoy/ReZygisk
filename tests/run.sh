@@ -864,6 +864,63 @@ else
     skip "release cleanup" "bash/python3 missing"
 fi
 
+# --- versionCode (module-ci.sh release): a release is published only above the versionCode the
+# manager already has, the update.json on main and every published release. Real: log/die/api and
+# the statements from VC=$((BUILT_VC .. to the floor check, cut from .forgejo/module-ci.sh; stubbed:
+# curl (a fake forge serving release list pages), git (a local repo whose main holds update.json).
+if command -v bash >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
+    VW="$W"/release-vc; mkdir -p "$VW/bin" "$VW/forge"
+    {
+        echo 'set -euo pipefail'
+        echo 'API=https://forge.invalid/api/v1/repos/example/mod BUILT_VC=674 VERSION_CODE_OFFSET=0 VERSION_CODE_FLOOR=0'
+        echo 'UPDATE_JSON_PATH=.forgejo/update.json'
+        echo 'AUTH_DIR=$(mktemp -d) AUTH_H=$AUTH_DIR/header; : > "$AUTH_H"'
+        sed -n '/^log() {/p; /^die() {/p; /^api() {/,/^}/p' "$R/.forgejo/module-ci.sh"
+        sed -n '/^VC=\$((BUILT_VC + VERSION_CODE_OFFSET))$/,/^\[ "\$VC" -ge "\$VERSION_CODE_FLOOR" \]/p' "$R/.forgejo/module-ci.sh"
+        echo 'echo "VC=$VC"'
+    } > "$VW/vc.sh"
+    # fake forge: GET .../releases?limit=50&page=N answers forge/page-N.json, [] past the last page;
+    # LIST=fail: every request fails
+    cat > "$VW/bin/curl" <<EOF
+#!/bin/sh
+for a in "\$@"; do u=\$a; done
+[ "\$LIST" = fail ] && exit 22
+case "\$u" in
+  */releases\?limit=50\&page=*) p=\${u##*page=}; if [ -f "$VW/forge/page-\$p.json" ]; then cat "$VW/forge/page-\$p.json"; else echo '[]'; fi ;;
+  *) exit 22 ;;
+esac
+EOF
+    chmod 755 "$VW/bin/curl"
+    # vc_case <name> <update.json content or "none"> <page-1.json> <page-2.json> <want: VC=N or "fails">
+    vc_case() {
+        rm -rf "$VW/repo" "$VW/forge"; mkdir -p "$VW/repo/.forgejo" "$VW/forge"
+        [ "$2" = none ] || printf '%s\n' "$2" > "$VW/repo/.forgejo/update.json"
+        printf '%s\n' "$3" > "$VW/forge/page-1.json"
+        [ -z "$4" ] || printf '%s\n' "$4" > "$VW/forge/page-2.json"
+        : > "$VW/repo/f"
+        (cd "$VW/repo" && git init -q && git add -A && git -c user.name=t -c user.email=t@example.invalid commit -qm t) > /dev/null 2>&1
+        got=$(cd "$VW/repo" && env PATH="$VW/bin:$PATH" TMPDIR="$VW" ${LIST:+LIST=$LIST} bash "$VW/vc.sh" 2>"$VW/err") || got=fails
+        [ "$got" != fails ] || grep -q "^ERROR: " "$VW/err" || got="fails without a die message: $(tail -n 1 "$VW/err")"
+        if [ "$got" = "$5" ]; then ok "release versionCode: $1"; else bad "release versionCode: $1" "expected $5, got $got: $(tail -n 1 "$VW/err")"; fi
+    }
+    rel_entry() { printf '{"id": %s, "draft": %s, "body": "Built by module-release #1.\\nversionCode %s\\nsha256 x"}' "$1" "$2" "$3"; }
+    if ! grep -q '^VC=\$((BUILT_VC' "$VW/vc.sh"; then
+        bad "release versionCode: VC statements not found in module-ci.sh"
+    else
+        vc_case "unchanged when above update.json and every release" '{"versionCode": 666}' "[$(rel_entry 3 false 666)]" "" "VC=674"
+        vc_case "update.json already at the built versionCode: one above it" '{"versionCode": 674}' "[$(rel_entry 3 false 600)]" "" "VC=675"
+        vc_case "highest published release wins over update.json, the first entry, the highest id and drafts" '{"versionCode": 666}' \
+            "[$(rel_entry 30 false 671), $(rel_entry 40 true 900)]" "[$(rel_entry 10 false 700)]" "VC=701"
+        vc_case "no update.json on main counts as 0" none "[]" "" "VC=674"
+        vc_case "update.json versionCode not a number: nothing published" '{"versionCode": "abc"}' "[]" "" "fails"
+        vc_case "update.json not JSON: nothing published" 'not json' "[]" "" "fails"
+        vc_case "release list not a list: nothing published" '{"versionCode": 1}' '{"message": "x"}' "" "fails"
+        LIST=fail; vc_case "unreadable release list: nothing published" '{"versionCode": 1}' "[]" "" "fails"; LIST=
+    fi
+else
+    skip "release versionCode" "bash/python3/git missing"
+fi
+
 # build step (module-ci.sh build): whatever the build user started is killed after the build,
 # failed or not. setpriv and chown are stubs: the stub records a kill and never runs it (here the
 # test user may well be the build uid, and `kill -9 -1` would end this session).
