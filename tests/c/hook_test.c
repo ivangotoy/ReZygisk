@@ -462,6 +462,38 @@ static int table_race(bool ignore) {
   return 1;
 }
 
+/* a module loaded by CSOLoader is listed at its loaded image, never at
+   the heap copy of its file */
+static int test_module_map_uses_loaded_base(void) {
+  static char file_copy[64], loaded[64];
+  static struct csoloader_elf img;
+  img.base = loaded;
+  img.header = (ElfW(Ehdr) *)file_copy;
+  img.size = sizeof(loaded);
+
+  static struct rezygisk_module mod;
+  mod.lib.lib_path = "/data/adb/modules/example/zygisk/arm64-v8a.so";
+  mod.lib.img = &img;
+  zygisk_modules = &mod;
+  zygisk_module_length = 1;
+
+  struct maps_info *maps = get_loaded_libraries();
+  if (!maps) return 2;
+
+  for (size_t i = 0; i < maps->length; i++) {
+    if (!maps->maps[i].path || strcmp(maps->maps[i].path, mod.lib.lib_path) != 0) continue;
+    if (maps->maps[i].start == (uintptr_t)loaded) return 0;
+
+    printf("module listed at %#zx (file copy %p), loaded at %p\n", (size_t)maps->maps[i].start, (void *)file_copy, (void *)loaded);
+
+    return 1;
+  }
+
+  printf("module not listed\n");
+
+  return 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -477,6 +509,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "jni_table_full") == 0) return test_jni_table_full();
   if (strcmp(argv[1], "register_table_race") == 0) return table_race(false);
   if (strcmp(argv[1], "exclude_table_race") == 0) return table_race(true);
+  if (strcmp(argv[1], "module_map_uses_loaded_base") == 0) return test_module_map_uses_loaded_base();
 
   return 2;
 }

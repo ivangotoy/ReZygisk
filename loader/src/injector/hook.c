@@ -574,7 +574,7 @@ static struct maps_info *get_loaded_libraries(void) {
   /* INFO: 3.: Zygisk modules loaded via CSOLoader */
   for (size_t i = 0; i < zygisk_module_length; i++) {
     struct rezygisk_module *map = &zygisk_modules[i];
-    if (!map->lib.lib_path || !map->lib.img || !map->lib.img->header) continue;
+    if (!map->lib.lib_path || !map->lib.img || !map->lib.img->base) continue;
 
     struct map_entry *new_maps = realloc(maps->maps, (maps->length + 1) * sizeof(struct map_entry));
     if (!new_maps) {
@@ -584,9 +584,10 @@ static struct maps_info *get_loaded_libraries(void) {
     }
 
     maps->maps = new_maps;
+    /* INFO: The loaded image, not img->header (a heap copy of the file) */
     maps->maps[maps->length++] = (struct map_entry) {
-      .start = (uintptr_t)map->lib.img->header,
-      .end = (uintptr_t)map->lib.img->header + map->lib.img->size,
+      .start = (uintptr_t)map->lib.img->base,
+      .end = (uintptr_t)map->lib.img->base + map->lib.img->size,
       .offset = 0,
       .dev = map->dev,
       .inode = map->ino,
