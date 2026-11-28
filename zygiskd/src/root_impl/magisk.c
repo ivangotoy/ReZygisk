@@ -81,9 +81,14 @@ bool magisk_uid_should_umount(const char *const process) {
   }
   escaped[escaped_len] = '\0';
 
-  char sqlite_cmd[59 + 2 * (PROCESS_NAME_MAX_LEN)];
-  /* INFO: Find if process string starts with any data in "process" column */
-  snprintf(sqlite_cmd, sizeof(sqlite_cmd), "SELECT 1 FROM denylist WHERE '%s' LIKE process || '%%' LIMIT 1", escaped);
+  char sqlite_cmd[160 + 3 * 2 * (PROCESS_NAME_MAX_LEN)];
+  /* INFO: An entry matches the process itself, its "<entry>:<suffix>" processes and its
+             "<entry>_zygote" app zygote; never a longer name that merely starts with it
+             (com.foo2 for com.foo). Compared with = and substr(), never LIKE, so a % or _
+             in an entry or in the name is an ordinary character. */
+  snprintf(sqlite_cmd, sizeof(sqlite_cmd),
+    "SELECT 1 FROM denylist WHERE process = '%s' OR process || '_zygote' = '%s' OR process || ':' = substr('%s', 1, length(process) + 1) LIMIT 1",
+    escaped, escaped, escaped);
 
   const char *const argv[] = { "magisk", "--sqlite", sqlite_cmd, NULL };
 

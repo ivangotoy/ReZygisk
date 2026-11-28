@@ -112,6 +112,11 @@ static int magisk_manager_pkg(const char *text, const char *after, size_t after_
   return 1;
 }
 
+/* the denylist query for an SQL-escaped name literal */
+static void deny_sql(char *buf, size_t size, const char *lit) {
+  snprintf(buf, size, "SELECT 1 FROM denylist WHERE process = '%s' OR process || '_zygote' = '%s' OR process || ':' = substr('%s', 1, length(process) + 1) LIMIT 1", lit, lit, lit);
+}
+
 static int magisk_denylist_sql(const char *process, const char *want) {
   out_text = ""; out_after = ""; out_after_at = 0;
   last_sql[0] = '\0';
@@ -139,18 +144,34 @@ int main(int argc, char **argv) {
     return 1;
   }
   if (strcmp(argv[1], "magisk_requester") == 0) return magisk_manager_pkg("value=com.example.hidden", "", 0, "com.example.hidden");
-  if (strcmp(argv[1], "magisk_sql_plain") == 0)
-    return magisk_denylist_sql("com.example.app:remote", "SELECT 1 FROM denylist WHERE 'com.example.app:remote' LIKE process || '%' LIMIT 1");
-  if (strcmp(argv[1], "magisk_sql_quotes") == 0)
-    return magisk_denylist_sql("com.example:a\"b'c", "SELECT 1 FROM denylist WHERE 'com.example:a\"b''c' LIKE process || '%' LIMIT 1");
+  if (strcmp(argv[1], "magisk_sql_plain") == 0) {
+    char want[2048];
+    deny_sql(want, sizeof(want), "com.example.app:remote");
+
+    return magisk_denylist_sql("com.example.app:remote", want);
+  }
+  if (strcmp(argv[1], "magisk_sql_quotes") == 0) {
+    char want[2048];
+    deny_sql(want, sizeof(want), "com.example:a\"b''c");
+
+    return magisk_denylist_sql("com.example:a\"b'c", want);
+  }
   if (strcmp(argv[1], "magisk_sql_max_quotes") == 0) {
     /* longest name zygiskd accepts (256 bytes), every byte a quote */
-    char name[257], lit[513], want[1024];
+    char name[257], lit[513], want[2048];
     memset(name, '\'', 256); name[256] = '\0';
     memset(lit, '\'', 512); lit[512] = '\0';
-    snprintf(want, sizeof(want), "SELECT 1 FROM denylist WHERE '%s' LIKE process || '%%' LIMIT 1", lit);
+    deny_sql(want, sizeof(want), lit);
 
     return magisk_denylist_sql(name, want);
+  }
+  /* the query built for $TEST_PROCESS, for tests/run.sh to run against a denylist */
+  if (strcmp(argv[1], "magisk_sql_print") == 0) {
+    out_text = ""; out_after = ""; out_after_at = 0;
+    magisk_uid_should_umount(getenv("TEST_PROCESS"));
+    printf("%s\n", last_sql);
+
+    return 0;
   }
   if (strcmp(argv[1], "apatch_isolated_prefix") == 0) return apatch_isolated_prefix();
   if (strcmp(argv[1], "magisk_short_output") == 0) return magisk_manager_pkg("abc", "com.example.stale", 6, "com.topjohnwu.magisk");

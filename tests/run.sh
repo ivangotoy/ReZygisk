@@ -542,6 +542,29 @@ c_test zygiskd_rootimpl magisk_short_output "zygiskd Magisk: output without valu
 c_test zygiskd_rootimpl magisk_sql_plain "zygiskd Magisk: denylist query for a plain process name"
 c_test zygiskd_rootimpl magisk_sql_quotes "zygiskd Magisk: quotes in the process name stay inside the SQL literal"
 c_test zygiskd_rootimpl magisk_sql_max_quotes "zygiskd Magisk: longest all-quote process name gives a complete query"
+# the Magisk denylist query, run by SQLite against a made-up denylist: an entry matches its own
+# process, "<entry>:<suffix>" and "<entry>_zygote", never a longer name, and % or _ match only themselves
+deny_case() {
+  if ! have "$CC_BIN"; then CC_SKIPPED=$((CC_SKIPPED + 1)); skip "zygiskd Magisk: denylist $1 -> $2" "no C compiler $CC_BIN"; return; fi
+  if ! python3 -I -c 'import sqlite3' 2>/dev/null; then skip "zygiskd Magisk: denylist $1 -> $2" "no python3 sqlite3"; return; fi
+  sql=$(cd "$W" && TEST_PROCESS=$1 "$W/zygiskd_rootimpl" magisk_sql_print 2>/dev/null)
+  got=$(python3 -I -c 'import sqlite3,sys
+db = sqlite3.connect(":memory:")
+db.execute("CREATE TABLE denylist (package_name TEXT, process TEXT)")
+for p in ("com.example.app", "com.ex%", "com.e_ample.other"): db.execute("INSERT INTO denylist VALUES (?, ?)", ("x", p))
+print(1 if db.execute(sys.argv[1]).fetchall() else 0)' "$sql" 2>&1)
+  expect_eq "zygiskd Magisk: denylist $1 -> $2" "$2" "$got"
+}
+deny_case com.example.app 1
+deny_case com.example.app:remote 1
+deny_case com.example.app_zygote 1
+deny_case com.example.app2 0
+deny_case com.example.appx:remote 0
+deny_case com.exZZZ 0
+deny_case com.ex% 1
+deny_case com.eXample.other 0
+deny_case com.e_ample.other 1
+deny_case "com.example.app'x" 0
 
 c_build monitor "$R/tests/c/monitor_test.c"
 c_test monitor state_json_stop_reason "monitor: state.json with a stop reason is valid JSON"
