@@ -259,6 +259,19 @@ switch (testCase) {
     if (!backgrounds.includes('#141414')) fail(`system chosen, OS switched to dark: colors ${JSON.stringify(backgrounds)}`)
     break
   }
+  case 'rtl_restored': {
+    // Arabic chosen in an earlier session: the page opens right to left
+    const store = { '/TreatWheel/language': 'ar_EG' }
+    globalThis.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v) } }
+    const attrs = {}
+    const plainDocument = globalThis.document
+    globalThis.document = new Proxy({}, {
+      get: (t, p) => (p === 'getElementById' ? (id) => (id === 'main_html' ? { setAttribute: (k, v) => { attrs[k] = v } } : plainDocument.getElementById(id)) : plainDocument[p])
+    })
+    await import(pathToFileURL(join(web, 'js', 'preloader.js')))
+    if (attrs.dir !== 'rtl') fail(`dir after opening with ar_EG: ${JSON.stringify(attrs.dir)}`)
+    break
+  }
   case 'actions_listeners_once': {
     // leaving the page drops its listeners (utils.removeAllListeners, as pageLoader does):
     // after three visits one tap runs one command

@@ -786,6 +786,7 @@ node_test home_zygote64_not_injected "WebUI: a 64-bit zygote reported as not inj
 node_test monitor_ctl_binary "WebUI: the monitor buttons use the installed zygisk-ptrace, also on 32-bit-only devices"
 node_test actions_listeners_once "WebUI: a monitor button tap runs one command, also after the Actions page was opened several times"
 node_test system_theme_follows_choice "WebUI: an OS light/dark switch follows the theme chosen in this session, not the one saved at start"
+node_test rtl_restored "WebUI: opened with Arabic chosen earlier, the page is right to left"
 node_test language_list_cards "WebUI: the language list shows one card per readable language, none for a trailing newline or a broken file"
 node_test language_list_empty "WebUI: an empty language list is reported and shows no card"
 node_test module_names_escaped "WebUI: module names are shown as text, not parsed as HTML"

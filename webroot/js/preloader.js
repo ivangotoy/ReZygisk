@@ -9,6 +9,10 @@ let sys_theme = localStorage.getItem('/ReZygisk/theme')
 if (!sys_theme) sys_theme = setThemeData('system')
 themeList[sys_theme](true)
 
+/* INFO: The language page sets right to left when Arabic is picked; a WebUI
+           opened with Arabic already chosen needs it too */
+if ((localStorage.getItem('/TreatWheel/language') || '').includes('ar_')) document.getElementById('main_html').setAttribute('dir', 'rtl')
+
 const ConfigState = JSON.parse(localStorage.getItem('/ReZygisk/webui_config') || '{}')
 
 /* INFO: The manager's --window-inset-* values describe the system bars for a
