@@ -1,6 +1,7 @@
 import { whichCurrentPage } from '../navbar.js'
 import { getStrings } from '../pageLoader.js'
 import { exec, toast } from '../../kernelsu.js'
+import utils from '../utils.js'
 
 /* INFO: 32-bit-only devices have only zygisk-ptrace32; either one reaches the monitor */
 function monitorCtl(command) {
@@ -58,18 +59,18 @@ export async function load() {
   const monitor_status = document.getElementById('monitor_status')
   const strings = await getStrings(whichCurrentPage())
 
-  monitor_start.addEventListener('click', () => {
+  utils.addListener(monitor_start, 'click', () => {
     if (![ strings.monitor.status.tracing, strings.monitor.status.stopping, strings.monitor.status.stopped ].includes(monitor_status.innerHTML)) return;
     monitor_status.innerHTML = strings.monitor.status.tracing
     monitorCtl('start')
   })
 
-  monitor_stop.addEventListener('click', () => {
+  utils.addListener(monitor_stop, 'click', () => {
     monitor_status.innerHTML = strings.monitor.status.exiting
     monitorCtl('exit')
   })
 
-  monitor_pause.addEventListener('click', () => {
+  utils.addListener(monitor_pause, 'click', () => {
     if (![ strings.monitor.status.tracing, strings.monitor.status.stopping, strings.monitor.status.stopped ].includes(monitor_status.innerHTML)) return;
     monitor_status.innerHTML = strings.monitor.status.stopped
     monitorCtl('stop')

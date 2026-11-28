@@ -53,8 +53,9 @@ const elementHandlers = {}
 // when set, only the navbar button of this page is checked (whichCurrentPage)
 let currentPage = null
 const element = (id) => (elements[id] ||= new Proxy({ innerHTML: '' }, {
-  get: (t, p) => (p === 'innerHTML' ? t.innerHTML :
+  get: (t, p) => (p === 'innerHTML' ? t.innerHTML : p === 'id' ? id :
     p === 'addEventListener' ? (name, fn) => { ((elementHandlers[id] ||= {})[name] ||= []).push(fn) } :
+    p === 'removeEventListener' ? (name, fn) => { const l = (elementHandlers[id] || {})[name]; if (l && l.includes(fn)) l.splice(l.indexOf(fn), 1) } :
     p === 'hasAttribute' && currentPage ? (name) => name === 'checked' && id === `n_${currentPage}` : anything),
   set: (t, p, v) => { if (p === 'innerHTML') t.innerHTML = String(v); return true }
 }))
@@ -232,6 +233,26 @@ switch (testCase) {
         const ran = readFileSync(join(bin, 'ran'), 'utf8').trim()
         if (ran !== `${installed[0]} ${want}`) fail(`${button} with zygisk-ptrace ${installed.join(', ')} installed ran: ${JSON.stringify(ran)} (command: ${command})`)
       }
+    }
+    break
+  }
+  case 'actions_listeners_once': {
+    // leaving the page drops its listeners (utils.removeAllListeners, as pageLoader does):
+    // after three visits one tap runs one command
+    currentPage = 'actions'
+    const actions = await import(pathToFileURL(join(web, 'js', 'pages', 'actions', 'index.js')))
+    const utils = (await import(pathToFileURL(join(web, 'js', 'pages', 'utils.js')))).default
+    const strings = JSON.parse(readFileSync(join(web, 'lang', 'en_US.json'), 'utf8')).pages.actions
+    for (let visit = 0; visit < 3; visit++) {
+      if (visit > 0) utils.removeAllListeners()
+      await actions.load()
+    }
+    for (const button of ['monitor_start_button', 'monitor_pause_button', 'monitor_stop_button']) {
+      element('monitor_status').innerHTML = strings.monitor.status.tracing
+      commands.length = 0
+      for (const fn of [...((elementHandlers[button] || {}).click || [])]) fn()
+      const sent = commands.filter((c) => c.includes('zygisk-ptrace')).length
+      if (sent !== 1) fail(`${button}: ${sent} commands for one tap after three visits`)
     }
     break
   }
