@@ -1071,7 +1071,8 @@ static void rz_sanitize_fds(struct zygisk_context *ctx) {
     jintArray fdsToIgnore = ctx->args.app->fds_to_ignore ? *ctx->args.app->fds_to_ignore : NULL;
     mark_fds_allowed(ctx, ctx->env, fdsToIgnore);
 
-    if (ctx->exempted_fds_count > 0) {
+    /* INFO: Variants without fds_to_ignore (Android 7.1, some Samsung) cannot keep exempted fds */
+    if (ctx->exempted_fds_count > 0 && ctx->args.app->fds_to_ignore) {
       jint len = fdsToIgnore ? (*ctx->env)->GetArrayLength(ctx->env, fdsToIgnore) : 0;
       jintArray newArray = (*ctx->env)->NewIntArray(ctx->env, (jsize)(len + ctx->exempted_fds_count));
       if (newArray) {

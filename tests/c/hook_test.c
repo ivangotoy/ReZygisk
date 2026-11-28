@@ -479,6 +479,48 @@ static int table_race(bool ignore) {
   return 1;
 }
 
+/* a module exempts an fd on a fork variant without fds_to_ignore
+   (nativeForkAndSpecialize_l, Android 7.1): no write through the
+   missing pointer (run in a child: a crash is a failure) */
+static jintArray t_new_int_array(JNIEnv *env, jsize n) { (void)env; (void)n; static int arr; return (jintArray)&arr; }
+static void t_set_int_region(JNIEnv *env, jintArray a, jsize s, jsize n, const jint *b) { (void)env; (void)a; (void)s; (void)n; (void)b; }
+static jsize t_array_length(JNIEnv *env, jarray a) { (void)env; (void)a; return 0; }
+static int test_exempt_fd_without_fds_to_ignore(void) {
+  pid_t pid = fork();
+  if (pid == -1) return 2;
+  if (pid == 0) {
+    static struct JNINativeInterface table;
+    table.NewIntArray = t_new_int_array;
+    table.SetIntArrayRegion = t_set_int_region;
+    table.GetArrayLength = t_array_length;
+    static JNIEnv env = &table;
+
+    static struct app_specialize_args_v5 args;
+    args.fds_to_ignore = NULL;
+
+    static struct zygisk_context ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.env = &env;
+    ctx.args.app = &args;
+    ctx.pid = 1;
+    FLAG_SET(&ctx, APP_FORK_AND_SPECIALIZE);
+    ctx.exempted_fds[0] = 0;
+    ctx.exempted_fds_count = 1;
+
+    rz_sanitize_fds(&ctx);
+
+    _exit(0);
+  }
+
+  int status = 0;
+  if (waitpid(pid, &status, 0) != pid) return 2;
+  if (WIFEXITED(status) && WEXITSTATUS(status) == 0) return 0;
+
+  printf("exempted fd on a variant without fds_to_ignore: child status 0x%x\n", status);
+
+  return 1;
+}
+
 /* an API v1-v3 hook by path regex: the matching library is handed to
    PLTI (at its ELF header) before the hook, so the commit succeeds */
 static int test_plt_commit_registers_library(void) {
@@ -548,6 +590,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "exclude_table_race") == 0) return table_race(true);
   if (strcmp(argv[1], "module_map_uses_loaded_base") == 0) return test_module_map_uses_loaded_base();
   if (strcmp(argv[1], "plt_commit_registers_library") == 0) return test_plt_commit_registers_library();
+  if (strcmp(argv[1], "exempt_fd_without_fds_to_ignore") == 0) return test_exempt_fd_without_fds_to_ignore();
 
   return 2;
 }
