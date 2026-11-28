@@ -119,7 +119,7 @@ void monitor_events_loop() {
 
     for (int i = 0; i < nfds; i++) {
       if (events[i].events & (EPOLLERR | EPOLLHUP)) {
-        LOGE("Failed event on fd %d: %s", ((struct epoll_event *)&events[i])->data.fd, strerror(errno));
+        LOGE("Failed event (epoll events 0x%x)", (unsigned int)events[i].events);
 
         monitor_events_running = false;
 

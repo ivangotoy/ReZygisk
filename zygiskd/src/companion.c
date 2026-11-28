@@ -73,7 +73,7 @@ void *entry_thread(void *arg) {
   */
   struct stat st1;
   if (fstat(fd, &st1) != -1 && st0.st_ino == st1.st_ino) {
-    LOGI(" - Client fd changed after module entry");
+    LOGI(" - Client fd unchanged after module entry, closing it");
 
     close(fd);
   }
