@@ -11,8 +11,11 @@ ZKSU_VERSION = $(VER_NAME)-$(VER_CODE)-$(COMMIT_HASH)-$(BUILD_TYPE)
 # INFO: Rewritten only when the version changes, so a new commit redoes the
 #         stamps below and the binaries and module.prop that carry the version
 VERSION_STAMP = $(BUILD_DIR)/version-$(BUILD_TYPE)
+# INFO: With the settings that reach the binaries or the module files, so that
+#         one given on the command line redoes the stamps too
+STAMP_TEXT = $(ZKSU_VERSION) $(MIN_APATCH_VERSION) $(MIN_KSU_VERSION) $(MIN_KSUD_VERSION) $(MIN_MAGISK_VERSION) $(MODULE_ID) $(MODULE_NAME) $(ARCHS)
 ifeq ($(filter clean,$(MAKECMDGOALS)),)
-$(shell mkdir -p '$(BUILD_DIR)' && [ "$$(cat '$(VERSION_STAMP)' 2>/dev/null)" = '$(ZKSU_VERSION)' ] || printf '%s\n' '$(ZKSU_VERSION)' > '$(VERSION_STAMP)')
+$(shell mkdir -p '$(BUILD_DIR)' && [ "$$(cat '$(VERSION_STAMP)' 2>/dev/null)" = '$(STAMP_TEXT)' ] || printf '%s\n' '$(STAMP_TEXT)' > '$(VERSION_STAMP)')
 endif
 
 ZIP_NAME = $(MODULE_NAME)-$(VER_NAME)-$(VER_CODE)-$(COMMIT_HASH)-$(BUILD_TYPE).zip
@@ -60,7 +63,7 @@ build: $(ZIP_FILE)
 # INFO: Also written here when missing, as after a clean in the same call
 $(VERSION_STAMP):
 	@mkdir -p $(dir $@)
-	@printf '%s\n' '$(ZKSU_VERSION)' > $@
+	@printf '%s\n' '$(STAMP_TEXT)' > $@
 
 $(LOADER_DONE): $(LOADER_INPUTS) $(VERSION_STAMP)
 	$(MAKE) -C loader BUILD_TYPE=$(BUILD_TYPE) BUILD_DIR=$(BUILD_DIR) ZKSU_VERSION=$(ZKSU_VERSION)

@@ -760,9 +760,18 @@ if have make; then
   for st in obj/debug/loader/.done obj/debug/zygiskd/.done module-debug.done; do newv="$newv $(mk_q 2 "$TOP/build/$st")"; done
   expect_eq "make: the loader, zygiskd and module stamps stay up to date for the same version" " 0 0 0" "$same"
   expect_eq "make: a new version makes the loader, zygiskd and module stamps out of date" " 1 1 1" "$newv"
+  # same version again, then a minimum root version set on the command line
+  mk_q 1 "$TOP/build/obj/debug/loader/.done" > /dev/null
+  touch -t 200001010000 "$TOP/build/version-debug"
+  minv=""
+  for st in obj/debug/loader/.done obj/debug/zygiskd/.done module-debug.done; do
+    minv="$minv $( (cd "$TOP" && make -q BUILD_DIR="$TOP/build" BUILD_TYPE=debug VER_CODE=1 COMMIT_HASH=test MIN_MAGISK_VERSION=27000 "$TOP/build/$st") >> "$C/out" 2>&1; echo $?)"
+  done
+  expect_eq "make: a minimum root version set on the command line makes the stamps out of date" " 1 1 1" "$minv"
 else
   mk_skip "make: the loader, zygiskd and module stamps stay up to date for the same version"
   mk_skip "make: a new version makes the loader, zygiskd and module stamps out of date"
+  mk_skip "make: a minimum root version set on the command line makes the stamps out of date"
 fi
 
 echo "== WebUI (node)"
