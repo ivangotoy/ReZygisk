@@ -7,7 +7,9 @@ DEBUG=@DEBUG@
 MODDIR=${0%/*}
 
 if [ "$ZYGISK_ENABLED" ]; then
-  sed -i "s|^description=|description=[❌ Disable Magisk's built-in Zygisk] |" "$MODDIR/module.prop"
+  # INFO: Nothing resets module.prop on this path: mark it once, not on every boot
+  grep -qF "description=[❌ Disable Magisk's built-in Zygisk] " "$MODDIR/module.prop" || \
+    sed -i "s|^description=|description=[❌ Disable Magisk's built-in Zygisk] |" "$MODDIR/module.prop"
 
   exit 0
 fi

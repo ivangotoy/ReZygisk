@@ -213,6 +213,8 @@ svc_case svczygisk
 run_svc ZYGISK_ENABLED=1
 expect_eq "service: Magisk Zygisk enabled exits 0" 0 "$?"
 expect_eq "service: Magisk Zygisk enabled marks the description" "description=[❌ Disable Magisk's built-in Zygisk] Standalone implementation of Zygisk." "$(grep '^description=' "$M/module.prop")"
+run_svc ZYGISK_ENABLED=1
+expect_eq "service: Magisk Zygisk enabled marks the description once, also on the next boot" "description=[❌ Disable Magisk's built-in Zygisk] Standalone implementation of Zygisk." "$(grep '^description=' "$M/module.prop")"
 
 svc_case svcmagisk
 for m in enabled disabled; do
