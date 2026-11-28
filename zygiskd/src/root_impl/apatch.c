@@ -186,9 +186,11 @@ bool apatch_uid_should_umount(uid_t uid, const char *const process) {
     for (size_t i = 0; i < config.size; i++) {
       size_t config_process_length = strlen(config.configs[i].process);
 
-      /* INFO: The package name, then the end or the ":" of a process suffix */
+      /* INFO: The package name, then the end, the ":" of a process suffix or
+                 the "_zygote" of its app zygote */
       if (config_process_length == 0 || strncmp(config.configs[i].process, process, config_process_length) != 0) continue;
-      if (process[config_process_length] != '\0' && process[config_process_length] != ':') continue;
+      const char *rest = process + config_process_length;
+      if (*rest != '\0' && *rest != ':' && strcmp(rest, "_zygote") != 0) continue;
 
       /* INFO: This allow us to copy the information to avoid use-after-free */
       bool umount_needed = config.configs[i].umount_needed;

@@ -531,7 +531,7 @@ c_test zygiskd_companion_timeout idle_longer_than_limit "zygiskd companion: idli
 c_build zygiskd_rootimpl "$R/tests/c/zygiskd_rootimpl_test.c"
 c_test zygiskd_rootimpl apatch_version "zygiskd APatch: version parsed from apd -V"
 c_test zygiskd_rootimpl apatch_empty_output "zygiskd APatch: empty apd -V output is abnormal"
-c_test zygiskd_rootimpl apatch_isolated_prefix "zygiskd APatch: an isolated service takes the umount choice of its own package only, not of a package its name merely starts with"
+c_test zygiskd_rootimpl apatch_isolated_prefix "zygiskd APatch: an isolated service or app zygote takes the umount choice of its own package only, not of a package its name merely starts with"
 c_test zygiskd_rootimpl magisk_requester "zygiskd Magisk: manager package from the requester string"
 c_test zygiskd_rootimpl magisk_short_output "zygiskd Magisk: output without value= keeps the default manager"
 c_test zygiskd_rootimpl magisk_sql_plain "zygiskd Magisk: denylist query for a plain process name"

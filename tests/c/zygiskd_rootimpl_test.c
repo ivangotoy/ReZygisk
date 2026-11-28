@@ -50,6 +50,8 @@ static int apatch_isolated_prefix(void) {
   struct { const char *process; bool want; } cases[] = {
     { "com.example.app:isolated", true },
     { "com.example.app", true },
+    { "com.example.app_zygote", true },
+    { "com.example.app_other", false },
     { "com.example.app2:isolated", false },
     { "com.example.ap", false },
     { "", false },
