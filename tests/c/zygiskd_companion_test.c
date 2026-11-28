@@ -13,7 +13,16 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-static void t_entry(int fd) { (void)fd; }
+/* when set, the module entry answers its client '1' if this fd (the
+   companion's channel to zygiskd) is close-on-exec, else '0' */
+static int report_cloexec_of = -1;
+static void t_entry(int fd) {
+  if (report_cloexec_of < 0) return;
+
+  int flags = fcntl(report_cloexec_of, F_GETFD);
+  char c = (flags != -1 && (flags & FD_CLOEXEC)) ? '1' : '0';
+  if (write(fd, &c, 1) != 1) return;
+}
 
 #define dlopen(p, f) ((void)(p), (void)(f), (void *)1)
 #define dlsym(h, s) ((void)(h), (void)(s), (void *)t_entry)
@@ -85,6 +94,47 @@ static int test_survives_gone_client(void) {
   }
 
   result = 0;
+
+  out:
+    kill(companion, SIGKILL);
+    waitpid(companion, NULL, 0);
+
+    return result;
+}
+
+/* zygiskd starts the companion with its channel open across exec; a
+   program the module companion starts must not inherit it */
+static int test_channel_cloexec(void) {
+  int sv[2];
+  if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1) return 2;
+
+  pid_t companion = fork();
+  if (companion == -1) return 2;
+  if (companion == 0) {
+    alarm(20);
+    close(sv[0]);
+    report_cloexec_of = sv[1];
+    companion_entry(sv[1]);
+
+    _exit(0);
+  }
+  close(sv[1]);
+
+  int result = 1;
+  int lib = open("/dev/null", O_RDONLY);
+  uint8_t ack = 0;
+  int peer = -1;
+  char c = 0;
+  if (write_string(sv[0], "example") == -1 || write_fd(sv[0], lib) == -1 ||
+      read(sv[0], &ack, 1) != 1 || ack != 1 ||
+      send_client(sv[0], &peer) == -1 || read(peer, &ack, 1) != 1 || read(peer, &c, 1) != 1) {
+    printf("companion did not serve the client\n");
+
+    goto out;
+  }
+
+  if (c == '1') result = 0;
+  else printf("the companion's channel to zygiskd is inherited across exec\n");
 
   out:
     kill(companion, SIGKILL);
@@ -170,6 +220,7 @@ int main(int argc, char **argv) {
   setvbuf(stdout, NULL, _IONBF, 0);
 
   if (strcmp(argv[1], "survives_gone_client") == 0) return test_survives_gone_client();
+  if (strcmp(argv[1], "channel_cloexec") == 0) return test_channel_cloexec();
 
   if (strcmp(argv[1], "handshake_never_comes") == 0) return test_handshake_never_comes();
   if (strcmp(argv[1], "idle_longer_than_limit") == 0) return test_idle_longer_than_limit();

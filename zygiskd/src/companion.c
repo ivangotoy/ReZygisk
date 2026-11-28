@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <fcntl.h>
 
 #include <dlfcn.h>
 #include <signal.h>
@@ -85,6 +86,13 @@ void *entry_thread(void *arg) {
 /* WARNING: Dynamic memory based */
 void companion_entry(int fd) {
   LOGI("New companion entry.\n - Client fd: %d\n", fd);
+
+  /* INFO: Kept open across the exec into the companion only: programs the
+             module companion starts must not hold the channel to zygiskd,
+             or zygiskd never sees this companion go away */
+  if (fcntl(fd, F_SETFD, FD_CLOEXEC) == -1) {
+    LOGW("Failed to set FD_CLOEXEC on the zygiskd channel: %s", strerror(errno));
+  }
 
   /* INFO: zygiskd sends the handshake right after starting the companion: a
              stuck zygiskd ends the companion instead of leaving it waiting */

@@ -487,6 +487,7 @@ c_test zygiskd_daemon_timeout gone_client_process_flags "zygiskd: a flags reques
 
 c_build zygiskd_companion "$R/tests/c/zygiskd_companion_test.c" "$R/zygiskd/src/utils.c"
 c_test zygiskd_companion survives_gone_client "zygiskd companion: a client gone before its ack does not end the companion"
+c_test zygiskd_companion channel_cloexec "zygiskd companion: programs a module companion starts do not inherit its channel to zygiskd"
 c_build zygiskd_companion_timeout "$R/tests/c/zygiskd_companion_test.c" "$R/zygiskd/src/utils.c" -DZYGISKD_PEER_TIMEOUT_MS=200
 c_test zygiskd_companion_timeout handshake_never_comes "zygiskd companion: a handshake that never comes ends the companion in time"
 c_test zygiskd_companion_timeout idle_longer_than_limit "zygiskd companion: idling longer than the limit still serves the next client"
