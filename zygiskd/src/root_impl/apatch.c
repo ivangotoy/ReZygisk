@@ -183,13 +183,12 @@ bool apatch_uid_should_umount(uid_t uid, const char *const process) {
              this should avoid it pass through as Mounted.
   */
   if (IS_ISOLATED_SERVICE(uid)) {
-    size_t targeted_process_length = strlen(process);
-
     for (size_t i = 0; i < config.size; i++) {
       size_t config_process_length = strlen(config.configs[i].process);
-      size_t smallest_process_length = targeted_process_length < config_process_length ? targeted_process_length : config_process_length;
 
-      if (strncmp(config.configs[i].process, process, smallest_process_length) != 0) continue;
+      /* INFO: The package name, then the end or the ":" of a process suffix */
+      if (config_process_length == 0 || strncmp(config.configs[i].process, process, config_process_length) != 0) continue;
+      if (process[config_process_length] != '\0' && process[config_process_length] != ':') continue;
 
       /* INFO: This allow us to copy the information to avoid use-after-free */
       bool umount_needed = config.configs[i].umount_needed;

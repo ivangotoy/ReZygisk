@@ -16,9 +16,52 @@
 #define exec_command t_exec
 #define uid_from_pkg t_uid_from_pkg
 #define access(p, m) ((void)(p), (void)(m), 0)
+/* APatch's package_config is read from $TEST_DIR/package_config */
+static FILE *t_fopen(const char *path, const char *mode);
+#define fopen(p, m) t_fopen(p, m)
 
 #include "../../zygiskd/src/root_impl/apatch.c"
 #include "../../zygiskd/src/root_impl/magisk.c"
+
+#undef fopen
+
+static FILE *t_fopen(const char *path, const char *mode) {
+  if (strcmp(path, "/data/adb/ap/package_config") != 0) return fopen(path, mode);
+
+  char mapped[PATH_MAX];
+  snprintf(mapped, sizeof(mapped), "%s/package_config", getenv("TEST_DIR"));
+
+  return fopen(mapped, mode);
+}
+
+/* isolated service whose uid matches no entry: the entry whose package
+   name the process name starts with, up to its end or a ":" suffix */
+static int apatch_isolated_prefix(void) {
+  const char *dir = getenv("TEST_DIR");
+  if (dir == NULL) return 2;
+  mkdir(dir, 0700);
+  char path[PATH_MAX];
+  snprintf(path, sizeof(path), "%s/package_config", dir);
+  FILE *f = fopen(path, "w");
+  if (f == NULL) return 2;
+  fputs("pkg,exclude,allow,uid,to_uid,sctx\ncom.example.app,1,0,10500,0,x\ncom.example.other,0,0,10600,0,x\n", f);
+  fclose(f);
+
+  struct { const char *process; bool want; } cases[] = {
+    { "com.example.app:isolated", true },
+    { "com.example.app", true },
+    { "com.example.app2:isolated", false },
+    { "com.example.ap", false },
+    { "", false },
+  };
+  int bad = 0;
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+    bool got = apatch_uid_should_umount(99001, cases[i].process);
+    if (got != cases[i].want) { printf("\"%s\": umount %d, expected %d\n", cases[i].process, got, cases[i].want); bad = 1; }
+  }
+
+  return bad;
+}
 
 /* canned output: <text>, a NUL, then <after> at byte offset <after_at>
    (bytes past the string model whatever the stack buffer held) */
@@ -107,6 +150,7 @@ int main(int argc, char **argv) {
 
     return magisk_denylist_sql(name, want);
   }
+  if (strcmp(argv[1], "apatch_isolated_prefix") == 0) return apatch_isolated_prefix();
   if (strcmp(argv[1], "magisk_short_output") == 0) return magisk_manager_pkg("abc", "com.example.stale", 6, "com.topjohnwu.magisk");
 
   return 2;
