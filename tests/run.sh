@@ -421,6 +421,25 @@ else
   bad "customize: supported Magisk device passes the gates" "rc=$rc; $(cat "$C/out")"
 fi
 
+# ABI support: the real statements of customize.sh (SUPPORTS_32BIT=false .. the 64-bit fi)
+# run on abilists; a 64-bit-only x86_64 list (also with an arm64 bridge) has no 32-bit ABI
+sed -n '/^SUPPORTS_32BIT=false$/,/^  ui_print "- Device supports 64-bit"$/p' "$R/module/src/customize.sh" > "$W/abi.sh"
+printf 'fi\necho "32=$SUPPORTS_32BIT 64=$SUPPORTS_64BIT"\n' >> "$W/abi.sh"
+abi_case() {
+  got=$(CPU_ABIS=$1 sh -c 'ui_print() { :; }; . "$0"' "$W/abi.sh" 2>&1)
+  expect_eq "customize: abilist $1 gives $2" "$2" "$got"
+}
+if grep -q 'SUPPORTS_64BIT=true' "$W/abi.sh"; then
+  abi_case x86_64,arm64-v8a "32=false 64=true"
+  abi_case x86_64 "32=false 64=true"
+  abi_case x86_64,x86,arm64-v8a,armeabi-v7a "32=true 64=true"
+  abi_case x86 "32=true 64=false"
+  abi_case arm64-v8a "32=false 64=true"
+  abi_case arm64-v8a,armeabi-v7a,armeabi "32=true 64=true"
+else
+  bad "customize: ABI statements not found in customize.sh"
+fi
+
 echo "== C (host compiler)"
 # Each tests/c/*_test.c includes the source it tests; device-only calls are
 # redirected there. c_build compiles once, c_test runs one named case.

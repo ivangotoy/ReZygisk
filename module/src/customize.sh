@@ -128,7 +128,7 @@ fi
 SUPPORTS_32BIT=false
 SUPPORTS_64BIT=false
 
-if [[ "$CPU_ABIS" == *"x86"* && "$CPU_ABIS" != "x86_64" || "$CPU_ABIS" == *"armeabi"* ]]; then
+if [[ ",$CPU_ABIS," == *",x86,"* || "$CPU_ABIS" == *"armeabi"* ]]; then
   SUPPORTS_32BIT=true
   ui_print "- Device supports 32-bit"
 fi
