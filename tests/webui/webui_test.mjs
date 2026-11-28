@@ -349,6 +349,22 @@ switch (testCase) {
     if (command !== want) fail(`command:  ${command}\nexpected: ${want}`)
     break
   }
+  case 'credit_link_exec_throws': {
+    // exec of am start fails outright: the link is opened once, without an error
+    await import(pathToFileURL(join(web, 'js', 'preloader.js')))
+    await settle()
+    const plainExec = ksu.exec
+    ksu.exec = (command, options, callback) => {
+      if (command.startsWith('am start')) throw new Error('exec unavailable')
+      return plainExec(command, options, callback)
+    }
+    const opened = []
+    window.open = (url) => { opened.push(url); return {} }
+    for (const fn of documentHandlers.click || []) await fn({ target: { getAttribute: () => 'github.com/example' } })
+    await settle()
+    if (opened.length !== 1) fail(`link opened ${opened.length} times: ${JSON.stringify(opened)}`)
+    break
+  }
   default:
     process.exit(2)
 }

@@ -781,6 +781,7 @@ node_test error_log_no_error_object "WebUI: an error event without an error obje
 node_test rejection_log_literal "WebUI: rejection reason reaches the log file literally, never as shell code"
 node_test module_ids_validated "WebUI: module ids outside the module id charset never reach the shell"
 node_test credit_link_quoted "WebUI: a credit link reaches am start as one quoted word"
+node_test credit_link_exec_throws "WebUI: a credit link whose am start cannot run is opened once, without an error"
 node_test module_names_in_order "WebUI: each module shows its own name, also next to modules without one"
 node_test home_zygote64_not_injected "WebUI: a 64-bit zygote reported as not injected is shown as not injected"
 node_test monitor_ctl_binary "WebUI: the monitor buttons use the installed zygisk-ptrace, also on 32-bit-only devices"

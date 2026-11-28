@@ -65,11 +65,10 @@ document.addEventListener('click', async (event) => {
 
   /* INFO: One single-quoted shell word: each ' becomes '\'' */
   const url = `'https://${getLink.replace(/'/g, `'\\''`)}'`
-  const ptrace64Cmd = await exec(`am start -a android.intent.action.VIEW -d ${url}`).catch(() => {
-    return window.open(`https://${getLink}`, "_blank", 'toolbar=0,location=0,menubar=0')
-  })
+  /* INFO: A failed exec opens the link in the WebView instead, once */
+  const ptrace64Cmd = await exec(`am start -a android.intent.action.VIEW -d ${url}`).catch(() => null)
 
-  if (ptrace64Cmd.errno !== 0) return window.open(`https://${getLink}`, "_blank", 'toolbar=0,location=0,menubar=0')
+  if (!ptrace64Cmd || ptrace64Cmd.errno !== 0) return window.open(`https://${getLink}`, "_blank", 'toolbar=0,location=0,menubar=0')
 }, false)
 
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (event) => {
