@@ -552,7 +552,8 @@ c_test zygiskd_rootimpl magisk_sql_plain "zygiskd Magisk: denylist query for a p
 c_test zygiskd_rootimpl magisk_sql_quotes "zygiskd Magisk: quotes in the process name stay inside the SQL literal"
 c_test zygiskd_rootimpl magisk_sql_max_quotes "zygiskd Magisk: longest all-quote process name gives a complete query"
 # the Magisk denylist query, run by SQLite against a made-up denylist: an entry matches its own
-# process, "<entry>:<suffix>" and "<entry>_zygote", never a longer name, and % or _ match only themselves
+# process, "<entry>:<suffix>" and "<entry>_zygote", never a longer name (only entries of the "isolated"
+# package match by prefix, as in Magisk), and % or _ match only themselves
 deny_case() {
   if ! have "$CC_BIN"; then CC_SKIPPED=$((CC_SKIPPED + 1)); skip "zygiskd Magisk: denylist $1 -> $2" "no C compiler $CC_BIN"; return; fi
   if ! python3 -I -c 'import sqlite3' 2>/dev/null; then skip "zygiskd Magisk: denylist $1 -> $2" "no python3 sqlite3"; return; fi
@@ -560,7 +561,7 @@ deny_case() {
   got=$(python3 -I -c 'import sqlite3,sys
 db = sqlite3.connect(":memory:")
 db.execute("CREATE TABLE denylist (package_name TEXT, process TEXT)")
-for p in ("com.example.app", "com.ex%", "com.e_ample.other"): db.execute("INSERT INTO denylist VALUES (?, ?)", ("x", p))
+for k, p in (("x", "com.example.app"), ("x", "com.ex%"), ("x", "com.e_ample.other"), ("x", "com.example.svc:remote"), ("isolated", "com.example.web:sandboxed_process")): db.execute("INSERT INTO denylist VALUES (?, ?)", (k, p))
 print(1 if db.execute(sys.argv[1]).fetchall() else 0)' "$sql" 2>&1)
   expect_eq "zygiskd Magisk: denylist $1 -> $2" "$2" "$got"
 }
@@ -574,6 +575,9 @@ deny_case com.ex% 1
 deny_case com.eXample.other 0
 deny_case com.e_ample.other 1
 deny_case "com.example.app'x" 0
+deny_case com.example.web:sandboxed_process0:org.example.Sandbox0 1
+deny_case com.example.web:sandboxed 0
+deny_case com.example.svc:remote0 0
 
 c_build monitor "$R/tests/c/monitor_test.c"
 c_test monitor state_json_stop_reason "monitor: state.json with a stop reason is valid JSON"

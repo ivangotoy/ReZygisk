@@ -71,7 +71,7 @@ static const char *out_text = "";
 static const char *out_after = "";
 static size_t out_after_at = 0;
 static char last_pkg[256];
-static char last_sql[2048];
+static char last_sql[4096];
 
 bool t_exec(char *restrict buf, size_t len, const char *restrict file, const char *const argv[]) {
   (void)file;
@@ -114,7 +114,7 @@ static int magisk_manager_pkg(const char *text, const char *after, size_t after_
 
 /* the denylist query for an SQL-escaped name literal */
 static void deny_sql(char *buf, size_t size, const char *lit) {
-  snprintf(buf, size, "SELECT 1 FROM denylist WHERE process = '%s' OR process || '_zygote' = '%s' OR process || ':' = substr('%s', 1, length(process) + 1) LIMIT 1", lit, lit, lit);
+  snprintf(buf, size, "SELECT 1 FROM denylist WHERE process = '%s' OR process || '_zygote' = '%s' OR process || ':' = substr('%s', 1, length(process) + 1) OR (package_name = 'isolated' AND process = substr('%s', 1, length(process))) LIMIT 1", lit, lit, lit, lit);
 }
 
 static int magisk_denylist_sql(const char *process, const char *want) {
@@ -145,20 +145,20 @@ int main(int argc, char **argv) {
   }
   if (strcmp(argv[1], "magisk_requester") == 0) return magisk_manager_pkg("value=com.example.hidden", "", 0, "com.example.hidden");
   if (strcmp(argv[1], "magisk_sql_plain") == 0) {
-    char want[2048];
+    char want[4096];
     deny_sql(want, sizeof(want), "com.example.app:remote");
 
     return magisk_denylist_sql("com.example.app:remote", want);
   }
   if (strcmp(argv[1], "magisk_sql_quotes") == 0) {
-    char want[2048];
+    char want[4096];
     deny_sql(want, sizeof(want), "com.example:a\"b''c");
 
     return magisk_denylist_sql("com.example:a\"b'c", want);
   }
   if (strcmp(argv[1], "magisk_sql_max_quotes") == 0) {
     /* longest name zygiskd accepts (256 bytes), every byte a quote */
-    char name[257], lit[513], want[2048];
+    char name[257], lit[513], want[4096];
     memset(name, '\'', 256); name[256] = '\0';
     memset(lit, '\'', 512); lit[512] = '\0';
     deny_sql(want, sizeof(want), lit);
