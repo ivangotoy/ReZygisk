@@ -45,6 +45,7 @@ static pid_t t_waitpid(pid_t pid, int *status, int options);
 #define waitpid(p, s, o) t_waitpid(p, s, o)
 /* ptrace: never touches a real process; PTRACE_SEIZE can be made to fail */
 static bool fail_seize = false;
+static bool sigchld_on_seize = false;
 static int seize_calls = 0;
 static long t_ptrace(int request, ...);
 #define ptrace(...) t_ptrace(__VA_ARGS__)
@@ -97,6 +98,8 @@ static long t_ptrace(int request, ...) {
   }
   if (request == PTRACE_SEIZE) {
     seize_calls++;
+    /* init forks right after it is seized: its fork stop is reported now */
+    if (sigchld_on_seize) kill(getpid(), SIGCHLD);
     if (fail_seize) {
       errno = EPERM;
 
@@ -123,7 +126,11 @@ static int exited_status = 1 << 8;
 
 static pid_t hang_pid = 0;
 
+/* when set, the first waitpid() ends the process with exit code 0 */
+static bool exit_on_waitpid = false;
+
 static pid_t t_waitpid(pid_t pid, int *status, int options) {
+  if (exit_on_waitpid) _exit(0);
   /* the process never reports its stop */
   if (hang_pid != 0 && pid == hang_pid) {
     if (options & WNOHANG) return 0;
@@ -1132,6 +1139,33 @@ static int test_ctl_queue_full(void) {
   return 1;
 }
 
+/* init is seized and forks at once: the SIGCHLD reporting its fork stop
+   reaches the monitor's loop (waitpid is called), it is not discarded
+   leaving init stopped */
+static int test_sigchld_before_seize(void) {
+  if (write_prop(PROP_FIXTURE) == -1) return 2;
+  if (make_rz_dir() == -1) return 2;
+
+  pid_t pid = fork();
+  if (pid == -1) return 2;
+  if (pid == 0) {
+    alarm(3);
+    sigchld_on_seize = true;
+    exit_on_waitpid = true;
+    init_monitor();
+
+    _exit(1);
+  }
+
+  int status = 0;
+  if (waitpid(pid, &status, 0) != pid) return 2;
+  if (WIFEXITED(status) && WEXITSTATUS(status) == 0) return 0;
+
+  printf("init fork stop never reached waitpid (child status 0x%x)\n", status);
+
+  return 1;
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
 
@@ -1162,5 +1196,6 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "stop_wait_times_out") == 0) return test_stop_wait_times_out();
   if (strcmp(argv[1], "exec_stop_unknown_program") == 0) return test_exec_stop_unknown_program();
   if (strcmp(argv[1], "ctl_queue_full") == 0) return test_ctl_queue_full();
+  if (strcmp(argv[1], "sigchld_before_seize") == 0) return test_sigchld_before_seize();
   return 2;
 }

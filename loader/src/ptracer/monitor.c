@@ -1163,6 +1163,15 @@ void init_monitor() {
 
   if (!prepare_environment()) exit(1);
 
+  /* INFO: SIGCHLD is blocked and its signalfd exists before init is seized:
+             a fork of init right after the seize stops init, and a SIGCHLD
+             that arrived unblocked would be discarded, leaving init stopped. */
+  if (sigchld_listener_init() == false) {
+    LOGE("failed to create signalfd");
+
+    exit(1);
+  }
+
   if (!claim_init_tracer()) exit(1);
 
   monitor_events_init();
@@ -1176,15 +1185,6 @@ void init_monitor() {
   }
 
   monitor_events_register_event(rezygiskd_listener_callback, monitor_sock_fd, EPOLLIN | EPOLLET);
-
-  if (sigchld_listener_init() == false) {
-    LOGE("failed to create signalfd");
-
-    rezygiskd_listener_stop();
-    close(monitor_epoll_fd);
-
-    exit(1);
-  }
 
   monitor_events_register_event(sigchld_listener_callback, sigchld_signal_fd, EPOLLIN | EPOLLET);
 
