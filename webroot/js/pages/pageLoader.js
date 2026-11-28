@@ -592,10 +592,11 @@ export async function reloadPage() {
   pageSpecificContent.innerHTML = await solveStrings(await loadHTML(pageId), pageId)
 
   const module = await importPageJS(pageId)
+  /* INFO: The reloaded HTML has new elements and load() adds the page's listeners
+             to them: drop the old ones first, so each is there once (reapplying
+             them as well gave every switch two handlers, flipping it back) */
+  utils.removeAllListeners()
   module.load()
-  /* INFO: When reloading the page, due to the way the HTML is reloaded, the JavaScript
-             listeners are lost, so we need to reapply them to ensure everything works. */
-  utils.reapplyListeners()
 }
 
 export function getStrings(pageId, forceDefault = false) {

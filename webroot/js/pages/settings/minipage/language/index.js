@@ -89,7 +89,8 @@ export async function load() {
     if (getLangLocate.includes('ar_')) main_html.setAttribute('dir', 'rtl')
     else main_html.setAttribute('dir', 'ltr')
 
-    loadPage('settings')
+    /* INFO: The settings page is back before it is reloaded, not loaded at the same time */
+    await loadPage('settings')
 
     reloadPage()
   }, false)

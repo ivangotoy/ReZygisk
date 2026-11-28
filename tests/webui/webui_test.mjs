@@ -259,6 +259,22 @@ switch (testCase) {
     if (!backgrounds.includes('#141414')) fail(`system chosen, OS switched to dark: colors ${JSON.stringify(backgrounds)}`)
     break
   }
+  case 'settings_reload_listeners_once': {
+    // a language pick reloads the settings page: each switch still has one click handler,
+    // so one tap flips its setting once (two handlers flip it back)
+    currentPage = 'settings'
+    const utils = (await import(pathToFileURL(join(web, 'js', 'pages', 'utils.js')))).default
+    const settings = await import(pathToFileURL(join(web, 'js', 'pages', 'settings', 'index.js')))
+    utils.removeAllListeners()
+    await settings.load()
+    await pageLoader.reloadPage()
+    await settle()
+    for (const id of ['rz_webui_fullscreen_switch', 'rz_webui_font_switch', 'lang_page_toggle', 'theme_page_toggle']) {
+      const n = ((elementHandlers[id] || {}).click || []).length
+      if (n !== 1) fail(`${id}: ${n} click handlers after the reload`)
+    }
+    break
+  }
   case 'rtl_restored': {
     // Arabic chosen in an earlier session: the page opens right to left
     const store = { '/TreatWheel/language': 'ar_EG' }
