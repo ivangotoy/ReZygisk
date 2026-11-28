@@ -123,6 +123,11 @@ else
   bad "workflow: release runs share one concurrency group, none cancelled" "$wf_conc"
 fi
 
+# the release floor sits above the versionCode already published (666); a fixed number, as CI
+# rewrites update.json after every release
+conf_floor=$(sed -n 's/^VERSION_CODE_FLOOR=//p' "$R/.forgejo/module-ci.conf")
+expect_eq "module-ci.conf: VERSION_CODE_FLOOR is above the published 666" 667 "$conf_floor"
+
 echo "== README dependencies"
 # The build tools the Makefile runs and the third-party modules sign.py
 # imports must be listed in README.md's Dependencies section.
