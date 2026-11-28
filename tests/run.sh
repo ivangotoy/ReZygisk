@@ -181,6 +181,8 @@ pfd_case pfdzygisk
 run_pfd ZYGISK_ENABLED=1 TEST_ABILIST=arm64-v8a
 expect_eq "post-fs-data: Magisk Zygisk enabled exits 0" 0 "$?"
 expect_eq "post-fs-data: Magisk Zygisk enabled touches nothing" "" "$(cat "$L")"
+# a monitor started in the background writes its marker late: give it the time wait_file gives
+n=0; while [ ! -e "$C/launched" ] && [ "$n" -lt 10 ]; do sleep 0.1 2>/dev/null || sleep 1; n=$((n + 1)); done
 check "post-fs-data: Magisk Zygisk enabled starts no monitor" test ! -e "$C/launched"
 
 pfd_case pfdmagisk
