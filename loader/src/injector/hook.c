@@ -751,6 +751,8 @@ static bool api_plt_hook_commit(void) {
   for (size_t i = 0; i < map_infos->length; i++) {
     struct map_entry *map = &map_infos->maps[i];
     if (map->offset != 0 || !map->is_private || !(map->perms & PROT_READ)) continue;
+    /* INFO: ReZygisk itself is no hook target */
+    if (start_addr && map->start == (uintptr_t)start_addr) continue;
 
     for (size_t r = 0; r < g_ctx->register_info_count; r++) {
       struct register_info *reg = &g_ctx->register_info[r];
@@ -767,7 +769,10 @@ static bool api_plt_hook_commit(void) {
         break;
       }
 
-      if (!ignored && !plti_add_hook(&plti_ctx, map->path, reg->symbol, reg->callback, reg->backup)) {
+      if (ignored) continue;
+
+      /* INFO: PLTI only hooks libraries it knows: add this one first (it skips a known base) */
+      if (!plti_add_manual_lib(&plti_ctx, map->path, map->start) || !plti_add_hook(&plti_ctx, map->path, reg->symbol, reg->callback, reg->backup)) {
         LOGE("Failed to register PLT hook for %s in %s", reg->symbol, map->path);
 
         any_failed = true;

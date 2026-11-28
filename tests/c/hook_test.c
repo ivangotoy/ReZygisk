@@ -50,7 +50,18 @@ static void *t_malloc(size_t size) {
 
 /* link stand-ins for what the tested functions do not reach */
 void free_maps(struct maps_info *maps) { (void)maps; }
-bool plti_add_hook(struct plti *c, const char *l, const char *n, void *cb, void **b) { (void)c; (void)l; (void)n; (void)cb; (void)b; return false; }
+/* PLTI stand-ins: a hook succeeds only in a library added before, the
+   way plti_add_hook only finds libraries in its list; an added library
+   must start with an ELF header in this process */
+static char plti_known[64][PATH_MAX];
+static int plti_known_count = 0;
+static int plti_not_elf = 0;
+bool plti_add_hook(struct plti *c, const char *l, const char *n, void *cb, void **b) {
+  (void)c; (void)n; (void)cb; (void)b;
+  for (int i = 0; i < plti_known_count; i++) if (strcmp(plti_known[i], l) == 0) return true;
+
+  return false;
+}
 bool plti_deinit(struct plti *c) { (void)c; return true; }
 bool plti_add_lib(struct plti *c, const char *l) { (void)c; (void)l; return false; }
 int parse_int(const char *s) { return atoi(s); }
@@ -63,7 +74,13 @@ const char *read_std_string(const void *p) { (void)p; return ""; }
 bool plti_remove_hook_by_prefix(struct plti *c, const char *l, const char *n, void **o) { (void)c; (void)l; (void)n; (void)o; return false; }
 bool plti_remove_hook(struct plti *c, const char *l, const char *n, void **o) { (void)c; (void)l; (void)n; (void)o; return false; }
 bool plti_init(struct plti *c) { (void)c; return false; }
-bool plti_add_manual_lib(struct plti *c, const char *p, uintptr_t b) { (void)c; (void)p; (void)b; return false; }
+bool plti_add_manual_lib(struct plti *c, const char *p, uintptr_t b) {
+  (void)c;
+  if (b == 0 || memcmp((const void *)b, "\177ELF", 4) != 0) { plti_not_elf++; return false; }
+  if (plti_known_count < 64) snprintf(plti_known[plti_known_count++], PATH_MAX, "%s", p);
+
+  return true;
+}
 bool plti_add_hook_by_prefix(struct plti *c, const char *l, const char *n, void *cb, void **b) { (void)c; (void)l; (void)n; (void)cb; (void)b; return false; }
 void csoloader_deinit(void) {}
 bool csoloader_abandon(struct csoloader *lib) { (void)lib; return true; }
@@ -462,6 +479,26 @@ static int table_race(bool ignore) {
   return 1;
 }
 
+/* an API v1-v3 hook by path regex: the matching library is handed to
+   PLTI (at its ELF header) before the hook, so the commit succeeds */
+static int test_plt_commit_registers_library(void) {
+  static struct zygisk_context ctx;
+  memset(&ctx, 0, sizeof(ctx));
+  pthread_mutex_init(&ctx.hook_info_lock, NULL);
+  g_ctx = &ctx;
+  zygisk_module_length = 0;
+
+  api_plt_hook_register(".*/libc[.-][^/]*$", "open", (void *)cb, NULL);
+  if (ctx.register_info_count != 1) return 2;
+
+  bool ok = api_plt_hook_commit();
+  if (ok && plti_known_count > 0 && plti_not_elf == 0) return 0;
+
+  printf("commit %s, %d libraries added, %d not at an ELF header\n", ok ? "ok" : "failed", plti_known_count, plti_not_elf);
+
+  return 1;
+}
+
 /* a module loaded by CSOLoader is listed at its loaded image, never at
    the heap copy of its file */
 static int test_module_map_uses_loaded_base(void) {
@@ -510,6 +547,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "register_table_race") == 0) return table_race(false);
   if (strcmp(argv[1], "exclude_table_race") == 0) return table_race(true);
   if (strcmp(argv[1], "module_map_uses_loaded_base") == 0) return test_module_map_uses_loaded_base();
+  if (strcmp(argv[1], "plt_commit_registers_library") == 0) return test_plt_commit_registers_library();
 
   return 2;
 }
