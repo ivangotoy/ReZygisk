@@ -185,7 +185,7 @@ if git cat-file -e "HEAD:$UPDATE_JSON_PATH" 2>/dev/null; then
     LAST_VC="$(git show "HEAD:$UPDATE_JSON_PATH" | python3 -I -c 'import json,sys
 v=json.load(sys.stdin)["versionCode"]
 if type(v) is not int or v < 0: sys.exit("versionCode is not a non-negative integer")
-print(v)')" || die "$UPDATE_JSON_PATH on main has no readable versionCode"
+print(v)')" || die "the update.json on main has no readable versionCode"
 fi
 page=1
 while :; do
