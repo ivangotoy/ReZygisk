@@ -521,6 +521,36 @@ static int test_exempt_fd_without_fds_to_ignore(void) {
   return 1;
 }
 
+/* exemptFd (API v4) answers whether the fd stays open */
+static int test_exempt_fd_result(void) {
+  static struct zygisk_context ctx;
+  static struct app_specialize_args_v5 args;
+  static jintArray fds;
+  memset(&ctx, 0, sizeof(ctx));
+  ctx.args.app = &args;
+  g_ctx = &ctx;
+  int bad = 0;
+
+  args.fds_to_ignore = &fds;
+  FLAG_SET(&ctx, APP_FORK_AND_SPECIALIZE);
+  if (api_exempt_fd(5) != true || ctx.exempted_fds_count != 1) { printf("app fork: not exempted\n"); bad = 1; }
+
+  ctx.exempted_fds_count = MAX_EXEMPTED_FDS;
+  if (api_exempt_fd(6) != false) { printf("full table: reported exempted\n"); bad = 1; }
+
+  ctx.exempted_fds_count = 0;
+  args.fds_to_ignore = NULL;
+  if (api_exempt_fd(7) != false) { printf("variant without fds_to_ignore: reported exempted\n"); bad = 1; }
+
+  ctx.flags = 0;
+  if (api_exempt_fd(8) != false) { printf("not an app fork: reported exempted\n"); bad = 1; }
+
+  FLAG_SET(&ctx, POST_SPECIALIZE);
+  if (api_exempt_fd(9) != true) { printf("post-specialize: reported closed\n"); bad = 1; }
+
+  return bad;
+}
+
 /* an API v1-v3 hook by path regex: the matching library is handed to
    PLTI (at its ELF header) before the hook, so the commit succeeds */
 static int test_plt_commit_registers_library(void) {
@@ -591,6 +621,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "module_map_uses_loaded_base") == 0) return test_module_map_uses_loaded_base();
   if (strcmp(argv[1], "plt_commit_registers_library") == 0) return test_plt_commit_registers_library();
   if (strcmp(argv[1], "exempt_fd_without_fds_to_ignore") == 0) return test_exempt_fd_without_fds_to_ignore();
+  if (strcmp(argv[1], "exempt_fd_result") == 0) return test_exempt_fd_result();
 
   return 2;
 }

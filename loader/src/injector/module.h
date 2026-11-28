@@ -140,7 +140,7 @@ struct rezygisk_api {
   };
   union {
     void (*plt_hook_exclude)(const char *, const char *); /* INFO: v3 and below */
-    void (*exempt_fd)(int);                               /* INFO: v4 */
+    bool (*exempt_fd)(int);                               /* INFO: v4 */
   };
 
   bool (*plt_hook_commit)();

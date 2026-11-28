@@ -868,16 +868,19 @@ static void api_plt_hook_register_v4(dev_t dev, ino_t inode, const char *symbol,
   }
 }
 
-static void api_exempt_fd(int fd) {
-  if (!g_ctx) return;
+/* INFO: Zygisk API v4: true if the fd stays open (exempted, or no fds are
+           closed any more), false if zygote will close it */
+static bool api_exempt_fd(int fd) {
+  if (!g_ctx) return false;
 
-  if (FLAG_GET(g_ctx, POST_SPECIALIZE) || FLAG_GET(g_ctx, SKIP_FD_SANITIZATION)) return;
-  if (!FLAG_GET(g_ctx, APP_FORK_AND_SPECIALIZE)) return;
-  if (g_ctx->exempted_fds_count >= MAX_EXEMPTED_FDS) return;
+  if (FLAG_GET(g_ctx, POST_SPECIALIZE) || FLAG_GET(g_ctx, SKIP_FD_SANITIZATION)) return true;
+  if (!FLAG_GET(g_ctx, APP_FORK_AND_SPECIALIZE)) return false;
+  if (!g_ctx->args.app || !g_ctx->args.app->fds_to_ignore) return false;
+  if (g_ctx->exempted_fds_count >= MAX_EXEMPTED_FDS) return false;
 
   g_ctx->exempted_fds[g_ctx->exempted_fds_count++] = fd;
 
-  return;
+  return true;
 }
 
 static bool api_plt_hook_commit_v4(void) {

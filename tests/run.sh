@@ -586,8 +586,9 @@ if [ -f "$R/loader/src/external/csoloader/include/csoloader.h" ] && [ -f "$R/loa
   c_test hook module_map_uses_loaded_base "loader: a module loaded by CSOLoader is listed at its loaded image, not at the heap copy of its file"
   c_test hook plt_commit_registers_library "loader: an API v1-v3 PLT hook commit hands each matching library to PLTI at its ELF header before hooking it"
   c_test hook exempt_fd_without_fds_to_ignore "loader: an fd exempted on a fork variant without fds_to_ignore does not crash the app"
+  c_test hook exempt_fd_result "loader: exemptFd (API v4) returns whether the fd stays open"
 else
-  CC_SKIPPED=$((CC_SKIPPED + 13))
+  CC_SKIPPED=$((CC_SKIPPED + 14))
   skip "loader: modules that fail to load are removed from zygiskd by their current index" "submodules not checked out (git submodule update --init)"
   skip "loader: a module that never registers has no specialize hooks called (no stale table memory)" "submodules not checked out (git submodule update --init)"
   skip "loader: an isolated service without an app data dir is specialized without reading a null string" "submodules not checked out (git submodule update --init)"
@@ -601,6 +602,7 @@ else
   skip "loader: a module loaded by CSOLoader is listed at its loaded image, not at the heap copy of its file" "submodules not checked out (git submodule update --init)"
   skip "loader: an API v1-v3 PLT hook commit hands each matching library to PLTI at its ELF header before hooking it" "submodules not checked out (git submodule update --init)"
   skip "loader: an fd exempted on a fork variant without fds_to_ignore does not crash the app" "submodules not checked out (git submodule update --init)"
+  skip "loader: exemptFd (API v4) returns whether the fd stays open" "submodules not checked out (git submodule update --init)"
 fi
 
 # loader requests with a 200 ms ZYGISKD_PEER_TIMEOUT_MS
